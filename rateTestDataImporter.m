@@ -1,0 +1,2 @@
+classdef rateTestDataImporter < importerInt
+end % 
