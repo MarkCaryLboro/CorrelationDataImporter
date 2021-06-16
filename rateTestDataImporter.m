@@ -5,7 +5,7 @@ classdef ( Abstract = true ) rateTestDataImporter
         Ds                                                                  % File data store
         Signals     (1,:)     string                                        % List of available channels
         Data                  table                                         % Data table
-        Battery     (1,:)     string          = "LGM50"                     % Battery name
+        Battery     (1,1)     string          = "LGM50"                     % Battery name
     end % protected properties
     
     properties ( Abstract = true, SetAccess = protected )
@@ -16,6 +16,7 @@ classdef ( Abstract = true ) rateTestDataImporter
     properties ( Constant = true, Abstract = true )
         Fileformat            string                                        % Supported input formats
         Tester                string                                        % Type of battery tester
+        Facility              correlationFacility                           % Facility name
     end % abstract & constant properties
     
     properties ( SetAccess = protected, Dependent = true )
@@ -33,8 +34,9 @@ classdef ( Abstract = true ) rateTestDataImporter
     end % Abstract methods signatures
     
     methods ( Access = protected, Abstract = true )
-        S = getSerialNumber( obj, Q )                                       % Fetch serial number of current file
-        T = getTemperature( obj, Q )                                        % Fetch the temperature setting
+        S = getSerialNumber( obj, Q, Str )                                  % Fetch serial number of current file
+        T = getTemperature( obj, Q, Str )                                   % Fetch the temperature setting
+        C = getCrate( obj, Q, Str )                                         % Fetch the c-rate data
     end % Protected abstract methods signatures
     
     methods ( Static = true, Abstract = true, Hidden = true )
@@ -103,33 +105,30 @@ classdef ( Abstract = true ) rateTestDataImporter
             reset( obj.Ds );
         end % resetDs
         
-        function obj = extractData( obj, FileName )
+        function obj = extractData( obj )
             %--------------------------------------------------------------
-            % Extract data from the datastore & write to the file specified
+            % Extract data from the datastore & write to the data table
             %
-            % obj = obj.extractData( FileName );
-            %
-            % Input Arguments:
-            %
-            % FileName  --> (string) Name of output file
+            % obj = obj.extractData();
             %--------------------------------------------------------------
-            arguments
-                obj
-                FileName (1,1) string  { mustBeNonempty( FileName ) }
-            end
-            %--------------------------------------------------------------
-            % Make sure the output file is an xlsx file
-            %--------------------------------------------------------------
-            FileName = obj.makeExcelFile( FileName );
             obj = obj.resetDs();
+            obj.Data = table.empty;
             N = obj.NumFiles;
             for Q = 1:N
                 %----------------------------------------------------------
                 % Fetch the necessary data one file at a time and append to
                 % a data table for export
                 %----------------------------------------------------------
+                Msg = sprintf( 'Extracting data from file %3.0f of %3.0f',...
+                                Q, N );
+                try
+                    waitbar( ( Q / N ), W, Msg );
+                catch
+                    W = waitbar( ( Q / N ), Msg );
+                end
                 SerialNumber = obj.getSerialNumber( Q );
                 Temperature = obj.getTemperature( Q );
+                CRate = obj.getCrate( Q ); 
                 T = obj.readDs();
                 NumCyc = obj.numCycles( T, obj.Current_ );
                 [ Start, Finish ] = obj.locEvents( T, obj.Current_ );
@@ -138,9 +137,66 @@ classdef ( Abstract = true ) rateTestDataImporter
                                     T{ Finish, obj.Capacity_ };
                 SerialNumber = repmat( SerialNumber, NumCyc, 1 );
                 Temperature = repmat( Temperature, NumCyc, 1 );
+                CRate = repmat( CRate, NumCyc, 1 );
+                Facility = string( repmat( obj.Facility, NumCyc, 1 ) );     %#ok<PROP>
+                BatteryName = repmat( obj.Battery, NumCyc, 1 );
+                T = table( BatteryName, SerialNumber, CRate, Cycle,...
+                           Facility, Temperature, DischargeCapacity );      %#ok<PROP>
+                if isempty( obj.Data )
+                    obj.Data = T;
+                else
+                    obj.Data = vertcat( obj.Data, T );
+                end
             end
+            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA",...
+                            "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
+            close( W );
         end % extractData
+        
+        function export2excel( obj, Fname, Sheet )
+            %--------------------------------------------------------------
+            % export data to an excel file in standard format.
+            %
+            % obj.export2excel( Fname );
+            %
+            % Input Arguments:
+            %
+            % Fname         --> Full specification to output file
+            % Sheet         --> Number of excel sheet to write to {1}
+            %--------------------------------------------------------------
+            arguments
+                obj
+                Fname       (1,1)   string    { mustBeNonempty( Fname ) }
+                Sheet       (1,1)   double = 1
+            end
+            %--------------------------------------------------------------
+            % Make sure we are exporting to an '.xlsx' file
+            %--------------------------------------------------------------
+            Fname = obj.makeExcelFile( Fname );
+            Fpath = fileparts( Fname );
+            if isempty( Fpath )
+                Fpath = pwd;
+                Fname = fullfile( Fpath, Fname );
+            end
+            if ~isfile( Fname )
+                %----------------------------------------------------------
+                % Write new file
+                %----------------------------------------------------------
+                xlswrite( Fname,...
+                    [ string( obj.Data.Properties.VariableNames ); ...
+                      string( obj.Data.Properties.VariableUnits)  ], ... 
+                      Sheet, "A1" );
+            end
+            %--------------------------------------------------------------
+            % Output the data to the xlsx file
+            %--------------------------------------------------------------
+            writetable( obj.Data, Fname, 'WriteMode', 'Append',...
+                        'WriteVariableNames', false );
+        end % export2excel
     end % ordinary methods
+    
+    methods ( Access = protected )
+    end % protected methods
     
     methods
         function N = get.NumFiles( obj )
@@ -190,7 +246,11 @@ classdef ( Abstract = true ) rateTestDataImporter
             Name = replace( Channel, " ", "" );
             Name = replace( Name, "(", "_" );
             Name = replace( Name, ")", "_" );
-            
         end
+        
+        function [LastRow, LastCol ] = findLast( ExcelFile, SheetName )
+            import correlationDataStore.findLastRow
+            [LastRow, LastCol ] = findLastRow( ExcelFile, SheetName );
+        end % findLastRow
     end % protected static methods
 end % rateTestDataImporter

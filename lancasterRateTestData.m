@@ -5,6 +5,7 @@ classdef lancasterRateTestData < rateTestDataImporter
     properties ( Constant = true )
         Fileformat            string                = ".csv"                % Supported input formats
         Tester                string                = "Novonix"             % Type of battery tester
+        Facility              correlationFacility   = "Lancaster"           % Facility name
     end % abstract & constant properties
        
     properties ( SetAccess = protected )
@@ -106,7 +107,7 @@ classdef lancasterRateTestData < rateTestDataImporter
             % Str --> search string. Line to find begins with this string
             %--------------------------------------------------------------
             if ( nargin < 3 )
-                Str = "Cell:";                                              % Apply the default
+                Str = "Cell: ";                                             % Apply the default
             end
             T = obj.searchHeader( Q, Str );
             T = replace( T, Str, "" );
@@ -114,6 +115,30 @@ classdef lancasterRateTestData < rateTestDataImporter
             T = extractAfter( T, strlength( T ) - 2 );
             T = double( T );
         end % getTemperature
+        
+        function C = getCrate( obj, Q, Str )
+            %--------------------------------------------------------------
+            % Fetch the C-rate data for the Qth file
+            %
+            % C = obj.getCrate( Q, Str );
+            %
+            % Input Arguments:
+            %
+            % Q   --> pointer to file
+            % Str --> search string. Line to find begins with this string
+            %--------------------------------------------------------------
+            if ( nargin < 3 )
+                Str = "Protocol: ";                                         % Apply the default
+            end
+            S = obj.searchHeader( Q, Str );
+            S = replace( S, Str, "" );
+            C = extractBefore( S, "C" );
+            if ~strcmpi( C, "" )
+                C = double( C );
+            else
+                C = 0.5;
+            end
+        end % getCrate
         
         function SerialNumber = getSerialNumber( obj, Q, Str )
             %--------------------------------------------------------------
@@ -127,7 +152,7 @@ classdef lancasterRateTestData < rateTestDataImporter
             % Str --> search string. Line to find begins with this string
             %--------------------------------------------------------------
             if ( nargin < 3 )
-                Str = "Cell:";                                              % Apply the default
+                Str = "Cell: ";                                             % Apply the default
             end
             L = obj.searchHeader( Q, Str );
             L = replace( L, Str, "" );
