@@ -13,7 +13,7 @@ classdef lancasterRateTestData < rateTestDataImporter
     end % 
     
     methods
-        function obj = lancasterRateTestData( RootDir )
+        function obj = lancasterRateTestData( BatteryId, RootDir )
             %--------------------------------------------------------------
             % lancasterRateTestData constructor. Imports correlation rate
             % test data and converts it to standard format
@@ -25,7 +25,12 @@ classdef lancasterRateTestData < rateTestDataImporter
             % RootDir           --> Root directory where data is held. User 
             %                       is prompted for the directory if empty
             %--------------------------------------------------------------
-            if ( nargin < 1 ) || isempty( RootDir )
+            if ( nargin < 1 ) || isempty( BatteryId )
+                obj.Battery = "LGM50";                                      % Apply default
+            else
+                obj = obj.setBattery( BatteryId );
+            end
+            if ( nargin < 2 ) || isempty( RootDir )
                 RootDir = uigetdir( cd, "Select root directory containing Lancaster rate test data" );
             elseif ~isfolder( RootDir )
                 error( '"%s" is not a valid folder', RootDir );
@@ -38,6 +43,7 @@ classdef lancasterRateTestData < rateTestDataImporter
             obj.Ds = tabularTextDatastore( RootDir, 'FileExtensions', ...
                         obj.Fileformat, 'IncludeSubfolders', true, ...
                         'OutputType', "table", 'TextType', "string" );
+            obj.Ds.ReadSize = 50000;        
             [ obj.Ds.NumHeaderLines,  obj.Signals ] = obj.numHeaderLines();
             warning on;
         end
@@ -88,23 +94,73 @@ classdef lancasterRateTestData < rateTestDataImporter
     end % get/set methods
     
     methods ( Access = protected )  
-        function SerialNumber = getSerialNumber( obj, Q )
+        function T = getTemperature( obj, Q, Str )  
             %--------------------------------------------------------------
-            % Parse the battery serial number information
+            % Parse the ageing temperature
             %
-            % SerialNumber = obj.getSerialNumber( Q );
+            % T = obj.getTemperature( Q, Str );
             %
             % Input Arguments:
             %
             % Q   --> pointer to file
+            % Str --> search string. Line to find begins with this string
             %--------------------------------------------------------------
-            Name = obj.Ds.Files{ Q };
-            [ ~, Name ] = fileparts( Name );
-            SerialNumber = string( extractBetween( Name, "Cell", "_" ) );
-        end
+            if ( nargin < 3 )
+                Str = "Cell:";                                              % Apply the default
+            end
+            T = obj.searchHeader( Q, Str );
+            T = replace( T, Str, "" );
+            T = extractBefore( T, "deg" );
+            T = extractAfter( T, strlength( T ) - 2 );
+            T = double( T );
+        end % getTemperature
+        
+        function SerialNumber = getSerialNumber( obj, Q, Str )
+            %--------------------------------------------------------------
+            % Parse the battery serial number information
+            %
+            % SerialNumber = obj.getSerialNumber( Q, Str );
+            %
+            % Input Arguments:
+            %
+            % Q   --> pointer to file
+            % Str --> search string. Line to find begins with this string
+            %--------------------------------------------------------------
+            if ( nargin < 3 )
+                Str = "Cell:";                                              % Apply the default
+            end
+            L = obj.searchHeader( Q, Str );
+            L = replace( L, Str, "" );
+            SerialNumber = string( extractBetween( L, "Cell", "_" ) );
+        end % getSerialNumber
     end % protected methods
     
     methods ( Access = private )
+        function L = searchHeader( obj, Q, Str )
+            %--------------------------------------------------------------
+            % search the header of the Qth file in the datastore for the
+            % line beginning with the string Str
+            %
+            % L = obj.searchHeader( Q, Str );
+            %
+            % Input Arguments:
+            %
+            % Q     --> Pointer to file to search
+            % Str   --> Search string. Line to find starts with this.
+            %--------------------------------------------------------------
+            Fname = obj.Ds.Files{ Q };
+            Fid = fopen( Fname );
+            Ok = false;
+            while ~Ok
+                %----------------------------------------------------------
+                % Search for the line beginning with Str
+                %----------------------------------------------------------
+                L = string( fgetl( Fid ) );
+                Ok = startsWith( L, Str, 'IgnoreCase', true );
+            end
+            fclose( Fid );                                                  % close the file
+        end % searchHeader
+        
         function [ N, Channels ] = numHeaderLines( obj )
             %--------------------------------------------------------------
             % Find number of header lines in the file and the list of data

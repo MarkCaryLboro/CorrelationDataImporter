@@ -5,6 +5,7 @@ classdef ( Abstract = true ) rateTestDataImporter
         Ds                                                                  % File data store
         Signals     (1,:)     string                                        % List of available channels
         Data                  table                                         % Data table
+        Battery     (1,:)     string          = "LGM50"                     % Battery name
     end % protected properties
     
     properties ( Abstract = true, SetAccess = protected )
@@ -33,7 +34,7 @@ classdef ( Abstract = true ) rateTestDataImporter
     
     methods ( Access = protected, Abstract = true )
         S = getSerialNumber( obj, Q )                                       % Fetch serial number of current file
-        T = getTemperature( obj, varargin )                                 % Fetch the temperature setting
+        T = getTemperature( obj, Q )                                        % Fetch the temperature setting
     end % Protected abstract methods signatures
     
     methods ( Static = true, Abstract = true, Hidden = true )
@@ -43,6 +44,23 @@ classdef ( Abstract = true ) rateTestDataImporter
     end
     
     methods
+        function obj = setBattery( obj, BatteryId )
+            %--------------------------------------------------------------
+            % Set the battery name
+            %
+            % obj = obj.setBattery( BatteryId );
+            %
+            % Input Arguments:
+            %
+            % BatteryId     --> (string) battery type desgination string
+            %--------------------------------------------------------------
+            arguments
+                obj
+                BatteryId   (1,1)   string  { mustBeNonempty( BatteryId ) }
+            end
+            obj.Battery = upper( BatteryId );
+        end % setBattery
+        
         function Ok = channelPresent( obj, Channel )
             %--------------------------------------------------------------
             % Return logical value to indicate whether a user specified
@@ -87,7 +105,7 @@ classdef ( Abstract = true ) rateTestDataImporter
         
         function obj = extractData( obj, FileName )
             %--------------------------------------------------------------
-            % Extract data from the datastore & write to the 
+            % Extract data from the datastore & write to the file specified
             %
             % obj = obj.extractData( FileName );
             %
@@ -111,6 +129,7 @@ classdef ( Abstract = true ) rateTestDataImporter
                 % a data table for export
                 %----------------------------------------------------------
                 SerialNumber = obj.getSerialNumber( Q );
+                Temperature = obj.getTemperature( Q );
                 T = obj.readDs();
                 NumCyc = obj.numCycles( T, obj.Current_ );
                 [ Start, Finish ] = obj.locEvents( T, obj.Current_ );
@@ -118,6 +137,7 @@ classdef ( Abstract = true ) rateTestDataImporter
                 DischargeCapacity = T{ Start, obj.Capacity_ } -....
                                     T{ Finish, obj.Capacity_ };
                 SerialNumber = repmat( SerialNumber, NumCyc, 1 );
+                Temperature = repmat( Temperature, NumCyc, 1 );
             end
         end % extractData
     end % ordinary methods
