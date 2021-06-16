@@ -11,7 +11,7 @@ classdef lancasterRateTestData < rateTestDataImporter
     properties ( SetAccess = protected )
         Current               string                = "Current (A)"         % Name of current channel
         Capacity              string                = "Capacity (Ah)"       % Name of capacity channel
-    end % 
+    end % protected properties
     
     methods
         function obj = lancasterRateTestData( BatteryId, RootDir )
@@ -19,10 +19,11 @@ classdef lancasterRateTestData < rateTestDataImporter
             % lancasterRateTestData constructor. Imports correlation rate
             % test data and converts it to standard format
             %
-            % obj = lancasterRateTestData( RootDir );
+            % obj = lancasterRateTestData( BatteryId, RootDir );
             %
             % Input Arguments:
             %
+            % BatteryId         --> (string) Name of battery {"LGM50"}
             % RootDir           --> Root directory where data is held. User 
             %                       is prompted for the directory if empty
             %--------------------------------------------------------------
@@ -48,6 +49,73 @@ classdef lancasterRateTestData < rateTestDataImporter
             [ obj.Ds.NumHeaderLines,  obj.Signals ] = obj.numHeaderLines();
             warning on;
         end
+        
+        function obj = extractData( obj )
+            %--------------------------------------------------------------
+            % Extract data from the datastore & write to the data table
+            %
+            % obj = obj.extractData();
+            %--------------------------------------------------------------
+            obj = obj.resetDs();
+            obj.Data = table.empty;
+            N = obj.NumFiles;
+            for Q = 1:N
+                %----------------------------------------------------------
+                % Fetch the necessary data one file at a time and append to
+                % a data table for export
+                %----------------------------------------------------------
+                Msg = sprintf( 'Extracting data from file %3.0f of %3.0f',...
+                                Q, N );
+                try
+                    waitbar( ( Q / N ), W, Msg );
+                catch
+                    W = waitbar( ( Q / N ), Msg );
+                end
+                %----------------------------------------------------------
+                % Capture metadata
+                %----------------------------------------------------------
+                SerialNumber = obj.getSerialNumber( Q );
+                Temperature = obj.getTemperature( Q );
+                CRate = obj.getCrate( Q ); 
+                %----------------------------------------------------------
+                % Read the current file
+                %----------------------------------------------------------
+                T = obj.readDs();
+                %----------------------------------------------------------
+                % Calculate number and location of the discharge events
+                %----------------------------------------------------------
+                NumCyc = obj.numCycles( T, obj.Current_ );
+                [ Start, Finish ] = obj.locEvents( T, obj.Current_ );
+                Cycle = ( 1:NumCyc ).';
+                %----------------------------------------------------------
+                % Calculate the discharge capacity
+                %----------------------------------------------------------
+                DischargeCapacity = T{ Start, obj.Capacity_ } -....
+                                    T{ Finish, obj.Capacity_ };
+                %----------------------------------------------------------
+                % Write the curreent data to a summary data and append it 
+                % to the data table
+                %----------------------------------------------------------
+                SerialNumber = repmat( SerialNumber, NumCyc, 1 );
+                Temperature = repmat( Temperature, NumCyc, 1 );
+                CRate = repmat( CRate, NumCyc, 1 );
+                Facility = string( repmat( obj.Facility, NumCyc, 1 ) );     %#ok<PROP>
+                BatteryName = repmat( obj.Battery, NumCyc, 1 );
+                T = table( BatteryName, SerialNumber, CRate, Cycle,...
+                           Facility, Temperature, DischargeCapacity );      %#ok<PROP>
+                if isempty( obj.Data )
+                    obj.Data = T;
+                else
+                    obj.Data = vertcat( obj.Data, T );
+                end
+            end
+            %--------------------------------------------------------------
+            % Define the units
+            %--------------------------------------------------------------
+            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA",...
+                            "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
+            close( W );
+        end % extractData
         
         function obj = setCurrentChannel( obj, Current )
             %--------------------------------------------------------------

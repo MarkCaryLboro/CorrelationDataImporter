@@ -23,7 +23,7 @@ classdef ( Abstract = true ) rateTestDataImporter
         NumFiles                                                            % Number of files in datastore
     end % Dependent properties
     
-    properties ( Access = private, Dependent = true )
+    properties ( Access = protected, Dependent = true )
         Current_              string
         Capacity_             string
     end
@@ -31,12 +31,10 @@ classdef ( Abstract = true ) rateTestDataImporter
     methods ( Abstract = true )
         obj = setCurrentChannel( obj, Current )                             % Define current channel name
         obj = setCapacityChannel( obj, Capacity )                           % Define capacity channel name
+        obj = extractData( obj, varagin )                                   % Extract data from datastore
     end % Abstract methods signatures
     
     methods ( Access = protected, Abstract = true )
-        S = getSerialNumber( obj, Q, Str )                                  % Fetch serial number of current file
-        T = getTemperature( obj, Q, Str )                                   % Fetch the temperature setting
-        C = getCrate( obj, Q, Str )                                         % Fetch the c-rate data
     end % Protected abstract methods signatures
     
     methods ( Static = true, Abstract = true, Hidden = true )
@@ -104,54 +102,6 @@ classdef ( Abstract = true ) rateTestDataImporter
             %--------------------------------------------------------------
             reset( obj.Ds );
         end % resetDs
-        
-        function obj = extractData( obj )
-            %--------------------------------------------------------------
-            % Extract data from the datastore & write to the data table
-            %
-            % obj = obj.extractData();
-            %--------------------------------------------------------------
-            obj = obj.resetDs();
-            obj.Data = table.empty;
-            N = obj.NumFiles;
-            for Q = 1:N
-                %----------------------------------------------------------
-                % Fetch the necessary data one file at a time and append to
-                % a data table for export
-                %----------------------------------------------------------
-                Msg = sprintf( 'Extracting data from file %3.0f of %3.0f',...
-                                Q, N );
-                try
-                    waitbar( ( Q / N ), W, Msg );
-                catch
-                    W = waitbar( ( Q / N ), Msg );
-                end
-                SerialNumber = obj.getSerialNumber( Q );
-                Temperature = obj.getTemperature( Q );
-                CRate = obj.getCrate( Q ); 
-                T = obj.readDs();
-                NumCyc = obj.numCycles( T, obj.Current_ );
-                [ Start, Finish ] = obj.locEvents( T, obj.Current_ );
-                Cycle = ( 1:NumCyc ).';
-                DischargeCapacity = T{ Start, obj.Capacity_ } -....
-                                    T{ Finish, obj.Capacity_ };
-                SerialNumber = repmat( SerialNumber, NumCyc, 1 );
-                Temperature = repmat( Temperature, NumCyc, 1 );
-                CRate = repmat( CRate, NumCyc, 1 );
-                Facility = string( repmat( obj.Facility, NumCyc, 1 ) );     %#ok<PROP>
-                BatteryName = repmat( obj.Battery, NumCyc, 1 );
-                T = table( BatteryName, SerialNumber, CRate, Cycle,...
-                           Facility, Temperature, DischargeCapacity );      %#ok<PROP>
-                if isempty( obj.Data )
-                    obj.Data = T;
-                else
-                    obj.Data = vertcat( obj.Data, T );
-                end
-            end
-            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA",...
-                            "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
-            close( W );
-        end % extractData
         
         function export2excel( obj, Fname, Sheet )
             %--------------------------------------------------------------
