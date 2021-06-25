@@ -29,8 +29,6 @@ classdef ( Abstract = true ) rateTestDataImporter
     end
     
     methods ( Abstract = true )
-        obj = setCurrentChannel( obj, Current )                             % Define current channel name
-        obj = setCapacityChannel( obj, Capacity )                           % Define capacity channel name
         obj = extractData( obj, varagin )                                   % Extract data from datastore
     end % Abstract methods signatures
     
@@ -143,6 +141,47 @@ classdef ( Abstract = true ) rateTestDataImporter
             writetable( obj.Data, Fname, 'WriteMode', 'Append',...
                         'WriteVariableNames', false );
         end % export2excel
+        
+        function obj = setCapacityChannel( obj, Capacity )
+            %--------------------------------------------------------------
+            % Define capacity channel name
+            % obj = obj.setCurrentChannel( Current );
+            %
+            % Input Arguments:
+            %
+            % Capacity   --> (string) Name of capacity channel
+            %--------------------------------------------------------------
+            arguments
+                obj         lancasterRateTestData
+                Capacity    string                  { mustBeNonEmpty( Capacity ) }
+            end
+            Ok = obj.channelPresent( Capacity );
+            if Ok
+                obj.Capacity = Capacity;
+            end
+        end
+        
+        function obj = setCurrentChannel( obj, Current )
+            %--------------------------------------------------------------
+            % Define current channel name
+            %
+            % obj = obj.setCurrentChannel( Current );
+            %
+            % Input Arguments:
+            %
+            % Current   --> (string) Name of current channel
+            %--------------------------------------------------------------
+            arguments
+                obj         lancasterRateTestData
+                Current     string                  { mustBeNonEmpty( Current ) }
+            end
+            Current = replace( Current, "(", "_" );
+            Current = replace( Current, ")", "_" );
+            Ok = obj.channelPresent( Current );
+            if Ok
+                obj.Current = Current;
+            end
+        end % setCurrentChannel    
     end % ordinary methods
     
     methods ( Access = protected )

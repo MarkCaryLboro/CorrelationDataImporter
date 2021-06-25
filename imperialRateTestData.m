@@ -1,0 +1,2 @@
+classdef imperialRateTestData < rateTestDataImporter
+end % imperialRateTestData

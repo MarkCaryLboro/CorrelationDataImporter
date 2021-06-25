@@ -90,9 +90,10 @@ classdef warwickRateTestData < rateTestDataImporter
                 %----------------------------------------------------------
                 % Capture metadata
                 %----------------------------------------------------------
-                SerialNumber = Idx.SerialNumber( Q );
+                SerialNumber = string( Idx.SerialNumber( Q ) );
                 Temperature = Idx.Temperature( Q );
                 CRate = string( Idx.CRate{ Q } ); 
+                CRate = double( replace( CRate, "C", "" ) );
                 %----------------------------------------------------------
                 % Read the current file
                 %----------------------------------------------------------
@@ -132,15 +133,8 @@ classdef warwickRateTestData < rateTestDataImporter
             obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA",...
                             "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
             close( W );
-        end % extractData
-        
-        function setCapacityChannel( obj )
-        end % setCapacityChannel
-        
-        function setCurrentChannel( obj )
-        end % setCapacityChannel
-        
-    end
+        end % extractData        
+    end % constructor and ordinary methods
     
     methods ( Access = protected )
     end % protected methods
@@ -174,9 +168,9 @@ classdef warwickRateTestData < rateTestDataImporter
             T.Properties.VariableNames = Vars;
         end % makeIndexTable
         
-        function D = calcDuration( DateTime ) 
-            % Convert timestamps to durations  
-        end %calcDuration
+%         function D = calcDuration( DateTime ) 
+%             % Convert timestamps to durations  
+%         end %calcDuration
         
        function N = numCycles( T, EventChannel )
             %--------------------------------------------------------------
@@ -235,12 +229,12 @@ classdef warwickRateTestData < rateTestDataImporter
                 %----------------------------------------------------------
                 % If any nans present re-interpolate
                 %----------------------------------------------------------
-                if any( isnan( S.( Names ) ) )
-                    D = S.( Names );
+                if any( isnan( S.( Names{ Q } ) ) )
+                    D = S.( Names{ Q } );
                     X = ( 1:numel( D ) ).';
                     Idx = ~isnan( D );
                     D = D( Idx );
-                    S.( Names ) = interp1( D, X( Idx ), X, 'linear',...
+                    S.( Names{ Q } ) = interp1( X( Idx ), D, X, 'linear',...
                                            'extrap' );
                 end
             end
