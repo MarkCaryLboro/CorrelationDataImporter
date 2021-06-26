@@ -36,7 +36,6 @@ classdef ( Abstract = true ) rateTestDataImporter
     end % Protected abstract methods signatures
     
     methods ( Static = true, Abstract = true, Hidden = true )
-        D = calcDuration( DateTime )                                        % Convert timestamps to durations            
         N = numCycles( T )                                                  % Return number of cycles  
         [ Start, Finish ] = locEvents( C )                                  % Return start and finish of discharge events
     end
@@ -236,6 +235,50 @@ classdef ( Abstract = true ) rateTestDataImporter
             Name = replace( Name, "(", "_" );
             Name = replace( Name, ")", "_" );
         end
+        
+        function D = calcDuration( DateTime )      
+            %--------------------------------------------------------------
+            % Calculate the test durations
+            %
+            % D = obj.calcDuration( DateTime );
+            %
+            % Input Arguments:
+            %
+            % DateTime  --> (datetime) time stamp vector for test data
+            %--------------------------------------------------------------
+            arguments 
+                DateTime  (:,1)  datetime
+            end
+            D = min( DateTime );
+            D = duration( DateTime - D );
+        end % calcDuration        
+        
+        function S = interpData( S )
+            %--------------------------------------------------------------
+            % Reinterpolate data to remove NaNs
+            %
+            % S = obj.interpData( S );
+            %
+            % Input Arguments:
+            %
+            % S     --> Data structure
+            %--------------------------------------------------------------
+            Names = string( fieldnames( S ) );
+            N = numel( Names );
+            for Q = 1:N
+                %----------------------------------------------------------
+                % If any nans present re-interpolate
+                %----------------------------------------------------------
+                if any( isnan( S.( Names{ Q } ) ) )
+                    D = S.( Names{ Q } );
+                    X = ( 1:numel( D ) ).';
+                    Idx = ~isnan( D );
+                    D = D( Idx );
+                    S.( Names{ Q } ) = interp1( X( Idx ), D, X, 'linear',...
+                                           'extrap' );
+                end
+            end
+        end % interpData        
         
         function [LastRow, LastCol ] = findLast( ExcelFile, SheetName )
             import correlationDataStore.findLastRow

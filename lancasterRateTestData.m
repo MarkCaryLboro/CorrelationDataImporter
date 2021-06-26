@@ -273,24 +273,7 @@ classdef lancasterRateTestData < rateTestDataImporter
         end % numHeaderLines
     end % private methods
     
-    methods ( Static = true )
-        function D = calcDuration( DateTime )      
-            %--------------------------------------------------------------
-            % Calculate the test durations
-            %
-            % D = obj.calcDuration( DateTime );
-            %
-            % Input Arguments:
-            %
-            % DateTime  --> (datetime) time stamp vector for test data
-            %--------------------------------------------------------------
-            arguments 
-                DateTime  (:,1)  datetime
-            end
-            D = min( DateTime );
-            D = duration( DateTime - D );
-        end % calcDuration
-        
+    methods ( Static = true )       
        function N = numCycles( T, EventChannel )
             %--------------------------------------------------------------
             % Return number of cycles

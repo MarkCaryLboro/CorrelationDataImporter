@@ -4,7 +4,7 @@ classdef warwickRateTestData < rateTestDataImporter
     
     properties ( Constant = true )
         Fileformat            string                = ".mat"                % Supported input formats
-        Tester                string                = "Novonix"             % Type of battery tester
+        Tester                string                = "Bitrode"             % Type of battery tester
         Facility              correlationFacility   = "Warwick"             % Facility name
     end % abstract & constant properties   
     
@@ -19,7 +19,7 @@ classdef warwickRateTestData < rateTestDataImporter
             % warwickRateTestData constructor. Imports correlation rate
             % test data and converts it to standard format
             %
-            % obj = warwickRateTestData( ( BatteryId, RootDir ) );
+            % obj = warwickRateTestData( BatteryId, RootDir );
             %
             % Input Arguments:
             %
@@ -47,7 +47,7 @@ classdef warwickRateTestData < rateTestDataImporter
                 'IncludeSubfolders', true, 'Type', 'file', 'ReadFcn',...
                 ReadFunc );
             warning on;        
-        end
+        end % Class constructor
         
         function obj = extractData( obj, FileName )
             %--------------------------------------------------------------
@@ -168,10 +168,6 @@ classdef warwickRateTestData < rateTestDataImporter
             T.Properties.VariableNames = Vars;
         end % makeIndexTable
         
-%         function D = calcDuration( DateTime ) 
-%             % Convert timestamps to durations  
-%         end %calcDuration
-        
        function N = numCycles( T, EventChannel )
             %--------------------------------------------------------------
             % Return number of cycles
@@ -212,32 +208,5 @@ classdef warwickRateTestData < rateTestDataImporter
             Finish = find( S > 0, numel( S ), 'first' );
             Finish = Finish + 1;
         end % locEvents
-        
-        function S = interpData( S )
-            %--------------------------------------------------------------
-            % Reinterpolate data to remove NaNs
-            %
-            % S = obj.interpData( S );
-            %
-            % Input Arguments:
-            %
-            % S     --> Data structure
-            %--------------------------------------------------------------
-            Names = string( fieldnames( S ) );
-            N = numel( Names );
-            for Q = 1:N
-                %----------------------------------------------------------
-                % If any nans present re-interpolate
-                %----------------------------------------------------------
-                if any( isnan( S.( Names{ Q } ) ) )
-                    D = S.( Names{ Q } );
-                    X = ( 1:numel( D ) ).';
-                    Idx = ~isnan( D );
-                    D = D( Idx );
-                    S.( Names{ Q } ) = interp1( X( Idx ), D, X, 'linear',...
-                                           'extrap' );
-                end
-            end
-        end % interpData
     end % Static & hidden methods
 end % warwickRateTestData
