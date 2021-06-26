@@ -4,7 +4,7 @@ classdef warwickRateTestData < rateTestDataImporter
     
     properties ( Constant = true )
         Fileformat            string                = ".mat"                % Supported input formats
-        Tester                string                = "Bitrode"             % Type of battery tester
+        Tester                string                = "Digatron"            % Type of battery tester
         Facility              correlationFacility   = "Warwick"             % Facility name
     end % abstract & constant properties   
     
@@ -43,9 +43,10 @@ classdef warwickRateTestData < rateTestDataImporter
             %--------------------------------------------------------------
             warning off
             ReadFunc = @(X)load( X );                                       %#ok<LOAD>
-            obj.Ds = datastore( RootDir, 'FileExtensions', '.mat',...
+            obj.Ds = datastore( RootDir, 'FileExtensions', obj.Fileformat,...
                 'IncludeSubfolders', true, 'Type', 'file', 'ReadFcn',...
                 ReadFunc );
+            obj.Signals = obj.readSignals();
             warning on;        
         end % Class constructor
         
@@ -140,6 +141,18 @@ classdef warwickRateTestData < rateTestDataImporter
     end % protected methods
     
     methods ( Access = private )
+        function S = readSignals( obj )
+            %--------------------------------------------------------------
+            % Read the signals contained in the data base and return as a
+            % string array
+            %
+            % S = obj.readSignals();
+            %--------------------------------------------------------------
+            obj = obj.resetDs();
+            T = obj.readDs();
+            T = T.data;
+            S = string( fieldnames( T ) ).';
+        end % readSignals
     end % private methods
     
     methods ( Static = true, Hidden = true )

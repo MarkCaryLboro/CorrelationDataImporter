@@ -158,7 +158,7 @@ classdef ( Abstract = true ) rateTestDataImporter
             if Ok
                 obj.Capacity = Capacity;
             end
-        end
+        end % setCapacityChannel
         
         function obj = setCurrentChannel( obj, Current )
             %--------------------------------------------------------------
@@ -206,6 +206,47 @@ classdef ( Abstract = true ) rateTestDataImporter
     end % protected methods    
     
     methods ( Static = true, Access = protected )
+%         function N = numCycles( T, EventChannel )
+%             %--------------------------------------------------------------
+%             % Return number of cycles
+%             %
+%             % N = obj.numCycles( T, EventChannel );
+%             %
+%             % Input Arguments:
+%             %
+%             % T             --> (table) data table
+%             % EventChannel  --> (string) Name of channel defining event
+%             %
+%             % Output Arguments:
+%             %
+%             % N             --> Number of cycles
+%             %--------------------------------------------------------------
+%             S = sign( T.( EventChannel ) );
+%             S( S > 0 ) = 0;
+%             S = diff( S );
+%             N = sum( S < 0 );
+%         end % numCycles  
+%                
+%         function [ Start, Finish ] = locEvents( T, EventChannel )
+%             %--------------------------------------------------------------
+%             % Locate start and finish of discharge events
+%             %
+%             % [ Start, Finish ] = obj.locEvents( T, , EventChannel );
+%             %
+%             % Input Arguments:
+%             %
+%             % T             --> (table) data table
+%             % EventChannel  --> (string) Name of channel defining event
+%             %--------------------------------------------------------------
+%             S = sign( T.( EventChannel ) );
+%             S( S > 0 ) = 0;
+%             S = diff( S );
+%             Start = find( S < 0, numel( S ), 'first' );
+%             Start = Start + 1;
+%             Finish = find( S > 0, numel( S ), 'first' );
+%             Finish = Finish + 1;
+%         end % locEvents        
+        
         function ExcelFile = makeExcelFile( FileName )
             %--------------------------------------------------------------
             % Make sure the export file is an ".xlsx" file
@@ -234,7 +275,8 @@ classdef ( Abstract = true ) rateTestDataImporter
             Name = replace( Channel, " ", "" );
             Name = replace( Name, "(", "_" );
             Name = replace( Name, ")", "_" );
-        end
+            Name = replace( Name, "-", "" );
+        end % parseChannelName
         
         function D = calcDuration( DateTime )      
             %--------------------------------------------------------------

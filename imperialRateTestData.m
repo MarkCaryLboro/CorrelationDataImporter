@@ -2,13 +2,13 @@ classdef imperialRateTestData < rateTestDataImporter
     
     properties ( Constant = true )
         Fileformat            string                = ".mat"                % Supported input formats
-        Tester                string                = "Bitrode"             % Type of battery tester
+        Tester                string                = "Biologic"            % Type of battery tester
         Facility              correlationFacility   = "Imperial"            % Facility name
     end % abstract & constant properties
     
     properties ( SetAccess = protected )
-        Current               string                = "I_mA"                % Name of current channel
-        Capacity              string                = "Capacity_mAh"        % Name of capacity channel
+        Current               string                = "Amps"                % Name of current channel
+        Capacity              string                = "Amp-hr"              % Name of capacity channel
     end % protected properties
     
     methods
@@ -44,6 +44,7 @@ classdef imperialRateTestData < rateTestDataImporter
             obj.Ds = datastore( RootDir, 'FileExtensions', '.mat',...
                 'IncludeSubfolders', true, 'Type', 'file', 'ReadFcn',...
                 ReadFunc );
+            obj.Signals = obj.readSignals();
             warning on;
         end % Class constructor
         
@@ -125,6 +126,19 @@ classdef imperialRateTestData < rateTestDataImporter
     end % constructor & ordinary methods
     
     methods ( Access = private )
+        function S = readSignals( obj )
+            %--------------------------------------------------------------
+            % Read the signals contained in the data base and return as a
+            % string array
+            %
+            % S = obj.readSignals();
+            %--------------------------------------------------------------
+            obj = obj.resetDs();
+            T = obj.readDs();
+            T = T.data;
+            S = string( fieldnames( T ) ).';
+        end % readSignals  
+        
         function C = getCRate25( obj, Q )
             %--------------------------------------------------------------
             % Return the C-Rate for the Qth cell in the datastore
@@ -241,6 +255,5 @@ classdef imperialRateTestData < rateTestDataImporter
             S = diff( S );
             N = sum( S < 0 );
         end % numCycles
-        
     end % static methods
 end % imperialRateTestData

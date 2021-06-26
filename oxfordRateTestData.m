@@ -1,25 +1,25 @@
-classdef lancasterRateTestData < rateTestDataImporter
+classdef oxfordRateTestData < rateTestDataImporter
     % Concrete rate test data interface for facility correlation analysis
-    % for Lancaster BATLAB data
+    % for Oxford data    
     
     properties ( Constant = true )
-        Fileformat            string                = ".csv"                % Supported input formats
-        Tester                string                = "Novonix"             % Type of battery tester
-        Facility              correlationFacility   = "Lancaster"           % Facility name
+        Fileformat            string                = ".mat"                % Supported input formats
+        Tester                string                = "Maccor"              % Type of battery tester
+        Facility              correlationFacility   = "Oxford"              % Facility name
     end % abstract & constant properties
        
     properties ( SetAccess = protected )
-        Current               string                = "Current (A)"         % Name of current channel
-        Capacity              string                = "Capacity (Ah)"       % Name of capacity channel
+        Current               string                = "Amps"                % Name of current channel
+        Capacity              string                = "Amp-hr"              % Name of capacity channel
     end % protected properties
     
     methods
-        function obj = lancasterRateTestData( BatteryId, RootDir )
+        function obj = oxfordRateTestData( BatteryId, RootDir )
             %--------------------------------------------------------------
-            % lancasterRateTestData constructor. Imports correlation rate
+            % oxfordRateTestData constructor. Imports correlation rate
             % test data and converts it to standard format
             %
-            % obj = lancasterRateTestData( BatteryId, RootDir );
+            % obj = oxfordRateTestData( BatteryId, RootDir );
             %
             % Input Arguments:
             %
@@ -42,13 +42,13 @@ classdef lancasterRateTestData < rateTestDataImporter
             % Create data store
             %--------------------------------------------------------------
             warning off;
-            obj.Ds = tabularTextDatastore( RootDir, 'FileExtensions', ...
-                        obj.Fileformat, 'IncludeSubfolders', true, ...
-                        'OutputType', "table", 'TextType', "string" );
-            obj.Ds.ReadSize = 50000;        
-            [ obj.Ds.NumHeaderLines,  obj.Signals ] = obj.numHeaderLines();
+            ReadFunc = @(X)load( X );                                       %#ok<LOAD>
+            obj.Ds = datastore( RootDir, 'FileExtensions', obj.Fileformat,...
+                'IncludeSubfolders', true, 'Type', 'file', 'ReadFcn',...
+                ReadFunc );
+            obj.Signals = obj.readSignals();
             warning on;
-        end % constructor
+        end % oxfordRateTestData
         
         function obj = extractData( obj )
             %--------------------------------------------------------------
@@ -65,22 +65,24 @@ classdef lancasterRateTestData < rateTestDataImporter
                 % a data table for export
                 %----------------------------------------------------------
                 Msg = sprintf( 'Extracting data from file %3.0f of %3.0f',...
-                                Q, N );
+                    Q, N );
                 try
                     waitbar( ( Q / N ), W, Msg );
                 catch
                     W = waitbar( ( Q / N ), Msg );
                 end
                 %----------------------------------------------------------
-                % Capture metadata
-                %----------------------------------------------------------
-                SerialNumber = obj.getSerialNumber( Q );
-                Temperature = obj.getTemperature( Q );
-                CRate = obj.getCrate( Q ); 
-                %----------------------------------------------------------
                 % Read the current file
                 %----------------------------------------------------------
                 T = obj.readDs();
+                Flds = string( fieldnames( T ) );
+                T = T.( Flds );
+                %----------------------------------------------------------
+                % Capture metadata
+                %----------------------------------------------------------
+                SerialNumber = obj.getSerialNumber( Q );
+                Temperature = obj.getTemperature( T );
+                CRate = obj.getCRate( Q );
                 %----------------------------------------------------------
                 % Calculate number and location of the discharge events
                 %----------------------------------------------------------
@@ -90,10 +92,10 @@ classdef lancasterRateTestData < rateTestDataImporter
                 %----------------------------------------------------------
                 % Calculate the discharge capacity
                 %----------------------------------------------------------
-                DischargeCapacity = T{ Start, obj.Capacity_ } -....
-                                    T{ Finish, obj.Capacity_ };
+                DischargeCapacity = ( T.( obj.Capacity_ )( Start ) -....
+                    T.( obj.Capacity_ )( Finish ) );
                 %----------------------------------------------------------
-                % Write the curreent data to a summary data and append it 
+                % Write the curreent data to a summary data and append it
                 % to the data table
                 %----------------------------------------------------------
                 SerialNumber = repmat( SerialNumber, NumCyc, 1 );
@@ -102,7 +104,7 @@ classdef lancasterRateTestData < rateTestDataImporter
                 Facility = string( repmat( obj.Facility, NumCyc, 1 ) );     %#ok<PROP>
                 BatteryName = repmat( obj.Battery, NumCyc, 1 );
                 T = table( BatteryName, SerialNumber, CRate, Cycle,...
-                           Facility, Temperature, DischargeCapacity );      %#ok<PROP>
+                    Facility, Temperature, DischargeCapacity );             %#ok<PROP>
                 if isempty( obj.Data )
                     obj.Data = T;
                 else
@@ -113,13 +115,10 @@ classdef lancasterRateTestData < rateTestDataImporter
             % Define the units
             %--------------------------------------------------------------
             obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA",...
-                            "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
+                "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
             close( W );
         end % extractData
     end % constructor and ordinary methods
-    
-    methods 
-    end % get/set methods
     
     methods ( Access = protected )  
         function T = getTemperature( obj, Q, Str )  
@@ -130,88 +129,72 @@ classdef lancasterRateTestData < rateTestDataImporter
             %
             % Input Arguments:
             %
-            % Q   --> pointer to file
-            % Str --> search string. Line to find begins with this string
+            % Q   --> Data table
+            % Str --> Name of temeperature channel {"Temp1"}
             %--------------------------------------------------------------
             if ( nargin < 3 )
-                Str = "Cell: ";                                             % Apply the default
+                Str = "Temp1";                                              % Apply the default
+            else
+                Str = string( Str );
             end
-            T = obj.searchHeader( Q, Str );
-            T = replace( T, Str, "" );
-            T = extractBefore( T, "deg" );
-            T = extractAfter( T, strlength( T ) - 2 );
-            T = double( T );
+            Ok = obj.channelPresent( Str );
+            if Ok
+                T = round( median( Q.( Str ) ) );
+                if ( T < 35 )
+                    T = 25;
+                else
+                    T = 45;
+                end
+            else
+                error( "Channel %s not present in data file", Str );
+            end
         end % getTemperature
         
-        function C = getCrate( obj, Q, Str )
+        function C = getCRate( obj, Q )
             %--------------------------------------------------------------
             % Fetch the C-rate data for the Qth file
             %
-            % C = obj.getCrate( Q, Str );
+            % C = obj.getCrate( Q );
             %
             % Input Arguments:
             %
             % Q   --> pointer to file
-            % Str --> search string. Line to find begins with this string
             %--------------------------------------------------------------
-            if ( nargin < 3 )
-                Str = "Protocol: ";                                         % Apply the default
-            end
-            S = obj.searchHeader( Q, Str );
-            S = replace( S, Str, "" );
-            C = extractBefore( S, "C" );
-            if ~strcmpi( C, "" )
-                C = double( C );
-            else
-                C = 0.5;
-            end
+            Fname = obj.Ds.Files{ Q };
+            Fname = string( Fname );
+            C = extractBetween( Fname, "RateTest_", "C_" );
+            C = double( C );
         end % getCrate
         
-        function SerialNumber = getSerialNumber( obj, Q, Str )
+        function SerialNumber = getSerialNumber( obj, Q )
             %--------------------------------------------------------------
             % Parse the battery serial number information
             %
-            % SerialNumber = obj.getSerialNumber( Q, Str );
+            % SerialNumber = obj.getSerialNumber( Q );
             %
             % Input Arguments:
             %
             % Q   --> pointer to file
-            % Str --> search string. Line to find begins with this string
             %--------------------------------------------------------------
-            if ( nargin < 3 )
-                Str = "Cell: ";                                             % Apply the default
-            end
-            L = obj.searchHeader( Q, Str );
-            L = replace( L, Str, "" );
-            SerialNumber = string( extractBetween( L, "Cell", "_" ) );
+            L = obj.Ds.Files{ Q };
+            SerialNumber = string( extractBetween( L, "OXF_", "_Rate" ) );
         end % getSerialNumber
-    end % protected methods
+    end % protected methods    
     
     methods ( Access = private )
-        function L = searchHeader( obj, Q, Str )
+        function S = readSignals( obj )
             %--------------------------------------------------------------
-            % search the header of the Qth file in the datastore for the
-            % line beginning with the string Str
+            % Read the signals contained in the data base and return as a
+            % string array
             %
-            % L = obj.searchHeader( Q, Str );
-            %
-            % Input Arguments:
-            %
-            % Q     --> Pointer to file to search
-            % Str   --> Search string. Line to find starts with this.
+            % S = obj.readSignals();
             %--------------------------------------------------------------
-            Fname = obj.Ds.Files{ Q };
-            Fid = fopen( Fname );
-            Ok = false;
-            while ~Ok
-                %----------------------------------------------------------
-                % Search for the line beginning with Str
-                %----------------------------------------------------------
-                L = string( fgetl( Fid ) );
-                Ok = startsWith( L, Str, 'IgnoreCase', true );
-            end
-            fclose( Fid );                                                  % close the file
-        end % searchHeader
+            obj = obj.resetDs();
+            T = obj.readDs();
+            S = string( fieldnames( T ) );
+            T = T.( S );
+            S = string( T.Properties.VariableNames );
+        end % readSignals  
         
         function [ N, Channels ] = numHeaderLines( obj )
             %--------------------------------------------------------------
@@ -232,7 +215,7 @@ classdef lancasterRateTestData < rateTestDataImporter
         end % numHeaderLines
     end % private methods
     
-    methods ( Static = true )       
+    methods ( Static = true )
        function N = numCycles( T, EventChannel )
             %--------------------------------------------------------------
             % Return number of cycles
@@ -253,7 +236,7 @@ classdef lancasterRateTestData < rateTestDataImporter
             S = diff( S );
             N = sum( S < 0 );
         end % numCycles  
-        
+               
         function [ Start, Finish ] = locEvents( T, EventChannel )
             %--------------------------------------------------------------
             % Locate start and finish of discharge events
@@ -273,5 +256,5 @@ classdef lancasterRateTestData < rateTestDataImporter
             Finish = find( S > 0, numel( S ), 'first' );
             Finish = Finish + 1;
         end % locEvents
-    end % static methods
-end % lancasterRateTestData
+    end % Static methods
+end % rateTestDataImporter
