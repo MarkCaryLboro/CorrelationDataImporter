@@ -93,7 +93,7 @@ classdef oxfordRateTestData < rateTestDataImporter
                 % Calculate the discharge capacity
                 %----------------------------------------------------------
                 DischargeCapacity = ( T.( obj.Capacity_ )( Start ) -....
-                    T.( obj.Capacity_ )( Finish ) );
+                    T.( obj.Capacity_ )( Finish - 1 ) );
                 %----------------------------------------------------------
                 % Write the curreent data to a summary data and append it
                 % to the data table
