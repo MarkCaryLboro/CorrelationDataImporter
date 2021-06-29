@@ -195,24 +195,6 @@ classdef oxfordRateTestData < rateTestDataImporter
             T = T.( S );
             S = string( T.Properties.VariableNames );
         end % readSignals  
-        
-        function [ N, Channels ] = numHeaderLines( obj )
-            %--------------------------------------------------------------
-            % Find number of header lines in the file and the list of data
-            % channels.
-            %
-            % [ N, Channels ] = obj.numHeaderLines();
-            %
-            % Output Arguments:
-            %
-            % N
-            % Channels  --> List of available channels (string)
-            %--------------------------------------------------------------
-            Fname = obj.Ds.Files{ 1 };
-            [ T, ~, N ] =importdata( Fname );
-            Channels = string( T.textdata( N, : ) );
-            N = N - 1;
-        end % numHeaderLines
     end % private methods
     
     methods ( Static = true )

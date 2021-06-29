@@ -76,8 +76,7 @@ classdef birminghamRateTestData < rateTestDataImporter
                 % Read the current file
                 %----------------------------------------------------------
                 T = obj.readDs();
-                Flds = string( fieldnames( T ) );
-                T = T.( Flds );
+                T = struct2table( T.data );
                 %----------------------------------------------------------
                 % Capture metadata
                 %----------------------------------------------------------
@@ -93,8 +92,8 @@ classdef birminghamRateTestData < rateTestDataImporter
                 %----------------------------------------------------------
                 % Calculate the discharge capacity
                 %----------------------------------------------------------
-                DischargeCapacity = ( T.( obj.Capacity_ )( Start ) -....
-                    T.( obj.Capacity_ )( Finish - 1 ) );
+                DischargeCapacity = ( T.( obj.Capacity_ )( Finish - 1 ) -....
+                    T.( obj.Capacity_ )( Start ) );
                 %----------------------------------------------------------
                 % Write the curreent data to a summary data and append it
                 % to the data table
@@ -131,16 +130,16 @@ classdef birminghamRateTestData < rateTestDataImporter
             % Input Arguments:
             %
             % Q   --> Data table
-            % Str --> Name of temeperature channel {"Temp1"}
+            % Str --> Name of temeperature channel {"EVTempC"}
             %--------------------------------------------------------------
             if ( nargin < 3 )
-                Str = "Temp1";                                              % Apply the default
+                Str = "EVTempC";                                            % Apply the default
             else
                 Str = string( Str );
             end
             Ok = obj.channelPresent( Str );
             if Ok
-                T = round( median( Q.( Str ) ) );
+                T = round( min( Q.( Str ) ) );
                 if ( T < 35 )
                     T = 25;
                 else
@@ -163,7 +162,7 @@ classdef birminghamRateTestData < rateTestDataImporter
             %--------------------------------------------------------------
             Fname = obj.Ds.Files{ Q };
             Fname = string( Fname );
-            C = extractBetween( Fname, "RateTest_", "C_" );
+            C = extractBetween( Fname, "Rate_Test_", "C_" );
             C = double( C );
         end % getCrate
         
@@ -178,8 +177,8 @@ classdef birminghamRateTestData < rateTestDataImporter
             % Q   --> pointer to file
             %--------------------------------------------------------------
             L = obj.Ds.Files{ Q };
-            SerialNumber = string( extractBetween( L, "Birmingham_",...
-                                                      "_Rate" ) );
+            SerialNumber = string( extractBetween( L, "_Cell",...
+                                                      "_Rate_Test" ) );
         end % getSerialNumber
     end % protected methods    
     
@@ -196,24 +195,6 @@ classdef birminghamRateTestData < rateTestDataImporter
             T = T.data;
             S = string( fieldnames( T ) );
         end % readSignals  
-        
-        function [ N, Channels ] = numHeaderLines( obj )
-            %--------------------------------------------------------------
-            % Find number of header lines in the file and the list of data
-            % channels.
-            %
-            % [ N, Channels ] = obj.numHeaderLines();
-            %
-            % Output Arguments:
-            %
-            % N
-            % Channels  --> List of available channels (string)
-            %--------------------------------------------------------------
-            Fname = obj.Ds.Files{ 1 };
-            [ T, ~, N ] =importdata( Fname );
-            Channels = string( T.textdata( N, : ) );
-            N = N - 1;
-        end % numHeaderLines
     end % private methods
     
     methods ( Static = true )
@@ -232,10 +213,14 @@ classdef birminghamRateTestData < rateTestDataImporter
             %
             % N             --> Number of cycles
             %--------------------------------------------------------------
-            S = sign( T.( EventChannel ) );
-            S( S > 0 ) = 0;
-            S = diff( S );
-            N = sum( S < 0 );
+            [ ~, ~, Maxi ] = birminghamRateTestData.peaks( T.( EventChannel ),...
+                                                                 0.05 );
+            %--------------------------------------------------------------
+            % Find location of transient spikes
+            %--------------------------------------------------------------
+            MaxIdx = ( Maxi( :, 2 ) > 0.98 );
+            MaxIdx = Maxi( MaxIdx, 1 );
+            N = numel( MaxIdx );
         end % numCycles  
                
         function [ Start, Finish ] = locEvents( T, EventChannel )
@@ -249,13 +234,37 @@ classdef birminghamRateTestData < rateTestDataImporter
             % T             --> (table) data table
             % EventChannel  --> (string) Name of channel defining event
             %--------------------------------------------------------------
+            [ ~, ~, Maxi ] = birminghamRateTestData.peaks( T.( EventChannel ),...
+                                                                 0.05 );
+            %--------------------------------------------------------------
+            % Find location of transient spikes
+            %--------------------------------------------------------------
+            MaxIdx = ( Maxi( :, 2 ) > 0.98 );
+            MaxIdx = Maxi( MaxIdx, 1 );
+            %--------------------------------------------------------------
+            % Find location of all charging and discharging events
+            %--------------------------------------------------------------
             S = sign( T.( EventChannel ) );
-            S( S > 0 ) = 0;
             S = diff( S );
-            Start = find( S < 0, numel( S ), 'first' );
-            Start = Start + 1;
-            Finish = find( S > 0, numel( S ), 'first' );
-            Finish = Finish + 1;
+            StartEvt = find( S > 0, numel( S ), 'first' );
+            StartEvt = StartEvt + 1;
+            FinishEvt = find( S < 0, numel( S ), 'first' );
+            FinishEvt = FinishEvt + 1;
+            %--------------------------------------------------------------
+            % Cut out the discharge events
+            %--------------------------------------------------------------
+            N = numel( MaxIdx );
+            Start = zeros( N, 1 );
+            Finish = zeros( N, 1 );
+            for Q = 1:N
+                %----------------------------------------------------------
+                % Locate first start after Qth transient spike
+                %----------------------------------------------------------
+                Idx = find( StartEvt > MaxIdx( Q ), 1, 'first' );
+                Start( Q ) = StartEvt( Idx );
+                Idx = find( FinishEvt > Start( Q ), 1, 'first' );
+                Finish( Q ) = FinishEvt( Idx );
+            end
         end % locEvents
     end % Static methods
 end % birminghamRateTestData
