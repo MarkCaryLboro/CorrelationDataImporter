@@ -11,3 +11,5 @@ warwickRateTestData         Concrete child class to import data from the Warwick
 imperialRateTestData        Concrete child class to import data from the Imperial facility
 oxfordRateTestData          Concrete child class to import data from the Oxford facility
 birminghamRateTestData      Concrete child class to import data from the Birmingham facility  
+states                      Enumeration for cell states in Birmingham data. Necessary for identifying
+                            the discharge events.
