@@ -36,8 +36,8 @@ classdef ( Abstract = true ) rateTestDataImporter
     end % Protected abstract methods signatures
     
     methods ( Static = true, Abstract = true, Hidden = true )
-        N = numCycles( T )                                                  % Return number of cycles  
-        [ Start, Finish ] = locEvents( C )                                  % Return start and finish of discharge events
+%         N = numCycles( T )                                                  % Return number of cycles  
+%         [ Start, Finish ] = locEvents( C )                                  % Return start and finish of discharge events
     end
     
     methods
@@ -285,53 +285,45 @@ classdef ( Abstract = true ) rateTestDataImporter
             import correlationDataStore.findLastRow
             [LastRow, LastCol ] = findLastRow( ExcelFile, SheetName );
         end % findLastRow
-                
-        function [ Maxi, Mini, MaxiC, MiniC ] = peaks( V, Delta )
+        function [ Start, Finish ] = locEvents( T, EventChannel )
             %--------------------------------------------------------------
-            % Determine location of stationary points in a signal.
-            % Recommend smoothing data prior to applying this. The
-            % algorithm scales the data onto the interval [-1,1]
-            % automatically....
+            % Locate start and finish of discharge events
             %
-            % A point is considered a maximum/minimum peak if it has the
-            % maximal/minimal value, and was preceded/proceeded (to the 
-            % left/right) by a value lower/higher by DELTA.
-            % [ Maximums, Minimums ] = obj.peakdet( V, Delta );
+            % [ Start, Finish ] = obj.locEvents( T, , EventChannel );
             %
             % Input Arguments:
             %
-            % V     --> Data signal
-            % Delta --> Minimum change in scaled signal to indicate a
-            %           stationary point.
+            % T             --> (table) data table
+            % EventChannel  --> (string) Name of channel defining event
+            %--------------------------------------------------------------
+            S = sign( T.( EventChannel ) );
+            S( S > 0 ) = 0;
+            S = diff( S );
+            Start = find( S < 0, numel( S ), 'first' );
+            Start = Start + 1;
+            Finish = find( S > 0, numel( S ), 'first' );
+            Finish = Finish + 1;
+        end % locEvents
+        
+        function N = numCycles( T, EventChannel )
+            %--------------------------------------------------------------
+            % Return number of cycles
+            %
+            % N = obj.numCycles( T, EventChannel );
+            %
+            % Input Arguments:
+            %
+            % T             --> (table) data table
+            % EventChannel  --> (string) Name of channel defining event
             %
             % Output Arguments:
             %
-            % Maxi  --> (double) Maximum locations & Values in natural
-            %           units
-            % Mini  --> (double) Minimum locations & Values in natural
-            %           units
-            % MaxiC --> (double) Maximum locations & Values in coded units
-            % MiniC --> (double) Minimum locations & Values in coded units
-            %
-            % Algorithm due to:
-            %
-            % Eli Billauer, 3.4.05 (Explicitly not copyrighted).
-            % This function is released to the public domain; 
-            % Any use is allowed.
+            % N             --> Number of cycles
             %--------------------------------------------------------------
-            import mysignal2008a.peakdet
-            if ( nargin < 2 )
-                Delta = 0.05;
-            end
-            MinV = min( V );
-            MaxV = max( V );
-            MedV = mean( [ MinV, MaxV ] );
-            Vc = 2 * ( V - MedV ) / ( MaxV - MinV );
-            [ MaxiC, MiniC ] = peakdet( Vc, Delta );
-            Maxi = MaxiC;
-            Mini = MiniC;
-            Maxi( :, 2 ) = 0.5 * MaxiC( :, 2 ) * ( MaxV - MinV ) + MedV;
-            Mini( :, 2 ) = 0.5 * MiniC( :, 2 ) * ( MaxV - MinV ) + MedV;
-        end % peaks
+            S = sign( T.( EventChannel ) );
+            S( S > 0 ) = 0;
+            S = diff( S );
+            N = sum( S < 0 );
+        end % numCycles    
     end % protected static methods
 end % rateTestDataImporter

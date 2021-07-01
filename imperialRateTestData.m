@@ -7,8 +7,8 @@ classdef imperialRateTestData < rateTestDataImporter
     end % abstract & constant properties
     
     properties ( SetAccess = protected )
-        Current               string                = "Amps"                % Name of current channel
-        Capacity              string                = "Amp-hr"              % Name of capacity channel
+        Current               string                = "I_mA"                % Name of current channel
+        Capacity              string                = "Q_discharge_mAh"     % Name of capacity channel
     end % protected properties
     
     methods
@@ -215,45 +215,5 @@ classdef imperialRateTestData < rateTestDataImporter
     end % private
     
     methods ( Static = true, Hidden = true )
-        function [ Start, Finish ] = locEvents( T, EventChannel )
-            %--------------------------------------------------------------
-            % Locate start and finish of discharge events
-            %
-            % [ Start, Finish ] = obj.locEvents( T, , EventChannel );
-            %
-            % Input Arguments:
-            %
-            % T             --> (table) data table
-            % EventChannel  --> (string) Name of channel defining event
-            %--------------------------------------------------------------
-            S = sign( T.( EventChannel ) );
-            S( S > 0 ) = 0;
-            S = diff( S );
-            Start = find( S < 0, numel( S ), 'first' );
-            Start = Start + 1;
-            Finish = find( S > 0, numel( S ), 'first' );
-            Finish = Finish + 1;
-        end % locEvents
-        
-        function N = numCycles( T, EventChannel )
-            %--------------------------------------------------------------
-            % Return number of cycles
-            %
-            % N = obj.numCycles( T, EventChannel );
-            %
-            % Input Arguments:
-            %
-            % T             --> (table) data table
-            % EventChannel  --> (string) Name of channel defining event
-            %
-            % Output Arguments:
-            %
-            % N             --> Number of cycles
-            %--------------------------------------------------------------
-            S = sign( T.( EventChannel ) );
-            S( S > 0 ) = 0;
-            S = diff( S );
-            N = sum( S < 0 );
-        end % numCycles
     end % static methods
 end % imperialRateTestData

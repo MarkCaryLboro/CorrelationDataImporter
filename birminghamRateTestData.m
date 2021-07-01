@@ -12,6 +12,7 @@ classdef birminghamRateTestData < rateTestDataImporter
     properties ( SetAccess = protected )
         Current               string                = "Amps"                % Name of current channel
         Capacity              string                = "Amp_hr"              % Name of capacity channel
+        State                 string                = "State"               % Channel indicating cell states
     end % protected properties
         
     methods
@@ -51,6 +52,30 @@ classdef birminghamRateTestData < rateTestDataImporter
             warning on;
         end % oxfordRateTestData
         
+        function obj = setState( obj, Name )
+            %--------------------------------------------------------------
+            % Set the name of the cell state channel. Default is "State"
+            %
+            % obj = obj.setState( Name );
+            %
+            % Input Arguments:
+            %
+            % Name  --> Name of channel in the signals list containing
+            %           state data
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)   birminghamRateTestData
+                Name    (1,1)   string                  = "State"
+            end
+            Ok = obj.channelPresent( Name );
+            if Ok
+                obj.State = Name;
+            else
+                warning('Cannot set "State". Signal "%s" not in the signals list',...
+                        Name);
+            end
+        end
+        
         function obj = extractData( obj )
             %--------------------------------------------------------------
             % Extract data from the datastore & write to the data table
@@ -78,15 +103,30 @@ classdef birminghamRateTestData < rateTestDataImporter
                 T = obj.readDs();
                 T = struct2table( T.data );
                 %----------------------------------------------------------
+                % Set the states to enumeration
+                %----------------------------------------------------------
+                T.State = states( T.State );
+                %----------------------------------------------------------
                 % Capture metadata
                 %----------------------------------------------------------
                 SerialNumber = obj.getSerialNumber( Q );
-                Temperature = obj.getTemperature( T );
                 CRate = obj.getCRate( Q );
+                try
+                    %------------------------------------------------------
+                    % Try to capture temperature data from data table
+                    %------------------------------------------------------
+                    Temperature = obj.getTemperature( T );
+                catch
+                    %------------------------------------------------------
+                    % Otherwise use the file name
+                    %------------------------------------------------------
+                    Temperature = obj.getTemperatureFname( Q );
+                end
                 %----------------------------------------------------------
                 % Calculate number and location of the discharge events
                 %----------------------------------------------------------
-                NumCyc = obj.numCycles( T, obj.Current_ );
+                NumCyc = obj.numCycles( T, obj.State );
+                T = obj.invertDischargeCurrent( T );
                 [ Start, Finish ] = obj.locEvents( T, obj.Current_ );
                 Cycle = ( 1:NumCyc ).';
                 %----------------------------------------------------------
@@ -121,9 +161,31 @@ classdef birminghamRateTestData < rateTestDataImporter
     end % constructor and ordinary methods
     
     methods ( Access = protected )  
+        function T = getTemperatureFname( obj, Q )
+            %--------------------------------------------------------------
+            % Parse the temperature data from the file name
+            %
+            % T = obj.getTemperatureFname( Q );
+            %
+            %
+            % Input Arguments:
+            %
+            % Q   --> Pointer to current file
+            %--------------------------------------------------------------
+            Name = obj.Ds.Files{ Q };
+            if contains( Name, "25" )
+                T = 25;
+            elseif contains( Name, "45" )
+                T = 45;
+            else
+                error('Cannot determine test temperature in file "%s"',...
+                                Name );
+            end
+        end % getTemperatureFname
+        
         function T = getTemperature( obj, Q, Str )  
             %--------------------------------------------------------------
-            % Parse the ageing temperature
+            % Parse the ageing temperature from data
             %
             % T = obj.getTemperature( Q, Str );
             %
@@ -139,14 +201,15 @@ classdef birminghamRateTestData < rateTestDataImporter
             end
             Ok = obj.channelPresent( Str );
             if Ok
+                %----------------------------------------------------------
+                % Assign the temperature from measurement
+                %----------------------------------------------------------
                 T = round( min( Q.( Str ) ) );
                 if ( T < 35 )
                     T = 25;
                 else
                     T = 45;
                 end
-            else
-                error( "Channel %s not present in data file", Str );
             end
         end % getTemperature
         
@@ -195,6 +258,22 @@ classdef birminghamRateTestData < rateTestDataImporter
             T = T.data;
             S = string( fieldnames( T ) );
         end % readSignals  
+        
+        function T = invertDischargeCurrent( obj, T )
+            %--------------------------------------------------------------
+            % Make sure discharge currents are negative
+            %
+            % T = obj.invertDischargeCurrent( T );
+            %
+            % Input Arguments:
+            %
+            % T     --> Data table for the current file
+            %--------------------------------------------------------------
+            Idx = ( T.( obj.State )  == "D" );
+            C = T.( obj.Current_ );
+            C( Idx ) = -C( Idx );
+            T.( obj.Current_ ) = C;
+        end % invertDischargeCurrent
     end % private methods
     
     methods ( Static = true )
@@ -213,17 +292,13 @@ classdef birminghamRateTestData < rateTestDataImporter
             %
             % N             --> Number of cycles
             %--------------------------------------------------------------
-            [ ~, ~, Maxi ] = birminghamRateTestData.peaks( T.( EventChannel ),...
-                                                                 0.05 );
-            %--------------------------------------------------------------
-            % Find location of transient spikes
-            %--------------------------------------------------------------
-            MaxIdx = ( Maxi( :, 2 ) > 0.98 );
-            MaxIdx = Maxi( MaxIdx, 1 );
-            N = numel( MaxIdx );
+            Idx = ( T.( EventChannel ) == "D" );                            % Point to discharge events
+            N = diff( Idx );
+            N( N < 0 ) = 0;
+            N = sum( N );
         end % numCycles  
-               
-        function [ Start, Finish ] = locEvents( T, EventChannel )
+              
+        function [ Start, Finish ] = locEvents( T, EventChannel)
             %--------------------------------------------------------------
             % Locate start and finish of discharge events
             %
@@ -234,37 +309,13 @@ classdef birminghamRateTestData < rateTestDataImporter
             % T             --> (table) data table
             % EventChannel  --> (string) Name of channel defining event
             %--------------------------------------------------------------
-            [ ~, ~, Maxi ] = birminghamRateTestData.peaks( T.( EventChannel ),...
-                                                                 0.05 );
-            %--------------------------------------------------------------
-            % Find location of transient spikes
-            %--------------------------------------------------------------
-            MaxIdx = ( Maxi( :, 2 ) > 0.98 );
-            MaxIdx = Maxi( MaxIdx, 1 );
-            %--------------------------------------------------------------
-            % Find location of all charging and discharging events
-            %--------------------------------------------------------------
             S = sign( T.( EventChannel ) );
+            S( S > 0 ) = 0;
             S = diff( S );
-            StartEvt = find( S > 0, numel( S ), 'first' );
-            StartEvt = StartEvt + 1;
-            FinishEvt = find( S < 0, numel( S ), 'first' );
-            FinishEvt = FinishEvt + 1;
-            %--------------------------------------------------------------
-            % Cut out the discharge events
-            %--------------------------------------------------------------
-            N = numel( MaxIdx );
-            Start = zeros( N, 1 );
-            Finish = zeros( N, 1 );
-            for Q = 1:N
-                %----------------------------------------------------------
-                % Locate first start after Qth transient spike
-                %----------------------------------------------------------
-                Idx = find( StartEvt > MaxIdx( Q ), 1, 'first' );
-                Start( Q ) = StartEvt( Idx );
-                Idx = find( FinishEvt > Start( Q ), 1, 'first' );
-                Finish( Q ) = FinishEvt( Idx );
-            end
+            Start = find( S < 0, numel( S ), 'first' );
+            Start = Start + 1;
+            Finish = find( S > 0, numel( S ), 'first' );
+            Finish = Finish + 1;
         end % locEvents
     end % Static methods
 end % birminghamRateTestData
