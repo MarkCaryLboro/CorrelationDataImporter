@@ -36,8 +36,6 @@ classdef ( Abstract = true ) rateTestDataImporter
     end % Protected abstract methods signatures
     
     methods ( Static = true, Abstract = true, Hidden = true )
-%         N = numCycles( T )                                                  % Return number of cycles  
-%         [ Start, Finish ] = locEvents( C )                                  % Return start and finish of discharge events
     end
     
     methods
@@ -285,6 +283,7 @@ classdef ( Abstract = true ) rateTestDataImporter
             import correlationDataStore.findLastRow
             [LastRow, LastCol ] = findLastRow( ExcelFile, SheetName );
         end % findLastRow
+        
         function [ Start, Finish ] = locEvents( T, EventChannel )
             %--------------------------------------------------------------
             % Locate start and finish of discharge events

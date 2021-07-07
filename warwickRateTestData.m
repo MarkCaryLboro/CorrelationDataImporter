@@ -33,7 +33,7 @@ classdef warwickRateTestData < rateTestDataImporter
                 obj = obj.setBattery( BatteryId );
             end
             if ( nargin < 2 ) || isempty( RootDir )
-                RootDir = uigetdir( cd, "Select root directory containing Lancaster rate test data" );
+                RootDir = uigetdir( cd, "Select root directory containing Warwick rate test data" );
             elseif ~isfolder( RootDir )
                 error( '"%s" is not a valid folder', RootDir );
             end

@@ -35,7 +35,7 @@ classdef birminghamRateTestData < rateTestDataImporter
                 obj = obj.setBattery( BatteryId );
             end
             if ( nargin < 2 ) || isempty( RootDir )
-                RootDir = uigetdir( cd, "Select root directory containing Lancaster rate test data" );
+                RootDir = uigetdir( cd, "Select root directory containing Birmingham rate test data" );
             elseif ~isfolder( RootDir )
                 error( '"%s" is not a valid folder', RootDir );
             end
@@ -204,7 +204,7 @@ classdef birminghamRateTestData < rateTestDataImporter
                 %----------------------------------------------------------
                 % Assign the temperature from measurement
                 %----------------------------------------------------------
-                T = round( min( Q.( Str ) ) );
+                T = round( median( Q.( Str ) ) );
                 if ( T < 35 )
                     T = 25;
                 else
@@ -276,7 +276,7 @@ classdef birminghamRateTestData < rateTestDataImporter
         end % invertDischargeCurrent
     end % private methods
     
-    methods ( Static = true )
+    methods ( Static = true, Access = protected )
        function N = numCycles( T, EventChannel )
             %--------------------------------------------------------------
             % Return number of cycles
