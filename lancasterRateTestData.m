@@ -138,9 +138,16 @@ classdef lancasterRateTestData < rateTestDataImporter
             end
             T = obj.searchHeader( Q, Str );
             T = replace( T, Str, "" );
-            T = extractBefore( T, "deg" );
-            T = extractAfter( T, strlength( T ) - 2 );
-            T = double( T );
+            D = extractBetween( T, "_", "C_" );
+            D = extractAfter( D, strlength( D ) - 2 );
+            if isempty( D ) || contains( D, "_" )
+                %----------------------------------------------------------
+                % Alternative format
+                %----------------------------------------------------------
+                D = extractBefore( T, "deg" );
+                D = extractAfter( D, strlength( D ) - 2 );
+            end
+            T = double( D );
         end % getTemperature
         
         function C = getCrate( obj, Q, Str )
