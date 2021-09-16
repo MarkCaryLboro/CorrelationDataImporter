@@ -177,6 +177,11 @@ classdef (Abstract = true ) pulseTestDataImporter
     end % ordinary methods    
     
     methods
+        function N = get.NumFiles( obj )
+            % Return number of files in datastore
+            N = numel( obj.Ds.Files );
+        end        
+        
         function C = get.Current_( obj )
             % Return parsed current channel
             C = obj.parseChannelName( obj.Current );
