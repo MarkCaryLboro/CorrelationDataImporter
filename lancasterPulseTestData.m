@@ -1,5 +1,5 @@
-classdef lancasterRateTestData < rateTestDataImporter
-    % Concrete rate test data interface for facility correlation analysis
+classdef lancasterPulseTestData < pulseTestDataImporter
+    % Concrete pulse test data interface for facility correlation analysis
     % for Lancaster BATLAB data
     
     properties ( Constant = true )
@@ -7,25 +7,26 @@ classdef lancasterRateTestData < rateTestDataImporter
         Tester                string                = "Novonix"             % Type of battery tester
         Facility              correlationFacility   = "Lancaster"           % Facility name
     end % abstract & constant properties
-       
+    
     properties ( SetAccess = protected )
         Current               string                = "Current (A)"         % Name of current channel
-        Capacity              string                = "Capacity (Ah)"       % Name of capacity channel
+        Voltage               string                = "Potential (V)"       % Name of voltage channel
     end % protected properties
     
     methods
-        function obj = lancasterRateTestData( BatteryId, RootDir )
+        function obj = lancasterPulseTestData( BatteryId, RootDir )
             %--------------------------------------------------------------
-            % lancasterRateTestData constructor. Imports correlation rate
+            % lancasterPulseTestData constructor. Imports correlation pulse
             % test data and converts it to standard format
             %
-            % obj = lancasterRateTestData( BatteryId, RootDir );
+            % obj = lancasterPulseTestData( BatteryId, RootDir );
             %
             % Input Arguments:
             %
             % BatteryId         --> (string) Name of battery {"LGM50"}
-            % RootDir           --> Root directory where data is held. User 
-            %                       is prompted for the directory if empty
+            % RootDir           --> (string) Root directory where data is  
+            %                       held. User is prompted for the 
+            %                       directory if empty
             %--------------------------------------------------------------
             if ( nargin < 1 ) || isempty( BatteryId )
                 obj.Battery = "LGM50";                                      % Apply default
@@ -76,7 +77,6 @@ classdef lancasterRateTestData < rateTestDataImporter
                 %----------------------------------------------------------
                 SerialNumber = obj.getSerialNumber( Q );
                 Temperature = obj.getTemperature( Q );
-                CRate = obj.getCrate( Q ); 
                 %----------------------------------------------------------
                 % Read the current file
                 %----------------------------------------------------------
@@ -116,12 +116,9 @@ classdef lancasterRateTestData < rateTestDataImporter
                             "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
             close( W );
         end % extractData
-    end % constructor and ordinary methods
+    end % ordinary & constructor methods
     
-    methods 
-    end % get/set methods
-    
-    methods ( Access = protected )  
+    methods ( Access = protected )
         function T = getTemperature( obj, Q, Str )  
             %--------------------------------------------------------------
             % Parse the ageing temperature
@@ -149,30 +146,6 @@ classdef lancasterRateTestData < rateTestDataImporter
             end
             T = double( D );
         end % getTemperature
-        
-        function C = getCrate( obj, Q, Str )
-            %--------------------------------------------------------------
-            % Fetch the C-rate data for the Qth file
-            %
-            % C = obj.getCrate( Q, Str );
-            %
-            % Input Arguments:
-            %
-            % Q   --> pointer to file
-            % Str --> search string. Line to find begins with this string
-            %--------------------------------------------------------------
-            if ( nargin < 3 )
-                Str = "Protocol: ";                                         % Apply the default
-            end
-            S = obj.searchHeader( Q, Str );
-            S = replace( S, Str, "" );
-            C = extractBefore( S, "C" );
-            if ~strcmpi( C, "" )
-                C = double( C );
-            else
-                C = 0.5;
-            end
-        end % getCrate
         
         function SerialNumber = getSerialNumber( obj, Q, Str )
             %--------------------------------------------------------------
@@ -239,6 +212,28 @@ classdef lancasterRateTestData < rateTestDataImporter
         end % numHeaderLines
     end % private methods
     
-    methods ( Static = true )       
-    end % static methods
-end % lancasterRateTestData
+    methods ( Static = true, Access = protected )
+        
+        function N = numCycles( T, EventChannel )
+            %--------------------------------------------------------------
+            % Return number of cycles
+            %
+            % N = obj.numCycles( T, EventChannel );
+            %
+            % Input Arguments:
+            %
+            % T             --> (table) data table
+            % EventChannel  --> (string) Name of channel defining event
+            %
+            % Output Arguments:
+            %
+            % N             --> Number of cycles
+            %--------------------------------------------------------------
+            [ S, IA, IS ] = uniquetol( T.( EventChannel ), 0.01 );
+%             S = sign( T.( EventChannel ) );
+%             S( S > 0 ) = 0;
+%             S = diff( S );
+%             N = sum( S < 0 );
+        end % numCycles    
+    end % static and protected methods
+end % lancasterPulseTestData
