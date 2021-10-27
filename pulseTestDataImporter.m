@@ -3,14 +3,16 @@ classdef (Abstract = true ) pulseTestDataImporter
         
     properties ( SetAccess = protected )
         Ds                                                                  % File data store
-        Signals     (1,:)     string                                        % List of available channels
+        Signals       (1,:)   string                                        % List of available channels
         Data                  table                                         % Data table
-        Battery     (1,1)     string          = "LGM50"                     % Battery name
+        Battery       (1,1)   string          = "LGM50"                     % Battery name
     end % protected properties
 
     properties ( Abstract = true, SetAccess = protected )
         Current               string                                        % Name of current channel
         Voltage               string                                        % Name of voltage channel
+        Capacity              string                                        % Name of capacity channel
+        DischgCurrent         double                                        % Discharge current 
     end % Abstract & protected properties    
     
     properties ( Constant = true, Abstract = true )
@@ -26,10 +28,12 @@ classdef (Abstract = true ) pulseTestDataImporter
     properties ( Access = protected, Dependent = true )
         Current_              string
         Voltage_              string
+        Capacity_             string
     end    
     
     methods ( Abstract = true )
         obj = extractData( obj, varagin )                                   % Extract data from datastore
+        obj = setDischgCurrent( obj, Dc )                                   % Set the discharge current target value
     end % Abstract methods signatures
     
     methods
@@ -182,6 +186,11 @@ classdef (Abstract = true ) pulseTestDataImporter
             N = numel( obj.Ds.Files );
         end        
         
+        function C = get.Capacity_( obj )
+            % Return parsed capacity channel
+            C = obj.parseChannelName( obj.Capacity );
+        end
+        
         function C = get.Current_( obj )
             % Return parsed current channel
             C = obj.parseChannelName( obj.Current );
@@ -192,6 +201,127 @@ classdef (Abstract = true ) pulseTestDataImporter
             C = obj.parseChannelName( obj.Voltage );
         end
     end % GET/SET Methods
+    
+    methods ( Access = protected )
+        function [ D_IR, C_IR, D_DV, D_DI, C_DV, C_DI ] = calcIR( obj, T, Start, Finish )
+            %--------------------------------------------------------------
+            % Calculate the discharge and charge internal resistance values
+            %
+            % [ D_IR, C_IR ] = obj.calcIR( T, Start, Finish );
+            %
+            % T         --> (table) data table
+            % Start     --> (double) start of discharge events
+            % Finish    --> (double) finish of discharge events
+            %
+            % Output Arguments
+            %
+            % D_IR  --> Discharge internal resitance values (Ohms)
+            % C_IR  --> Charge internal resitance values (Ohms)
+            % D_DV  --> Discharge pulse delta voltage
+            % D_DI  --> Discharge pulse delta current
+            % C_DV  --> Charge pulse delta voltage
+            % C_DI  --> Charge pulse delta current
+            %--------------------------------------------------------------
+            N = numel( Start );
+            [ D_IR, C_IR, D_DV, D_DI, C_DV, C_DI ] = deal( zeros( N, 1 ) );
+            %--------------------------------------------------------------
+            % Define voltage and current channel names in the data table
+            %--------------------------------------------------------------
+            Vname = obj.Voltage_;
+            Iname = obj.Current_;
+            for Q=1:N
+                %----------------------------------------------------------
+                % Calculate the internal resistance values
+                %----------------------------------------------------------
+                I = T.( Iname );
+                V = T.( Vname );
+                if ( Q < N )
+                    Tidx = Finish( Q ):Start( Q + 1 );
+                else
+                    Tidx = Finish( Q ):numel( V );
+                end
+                I = I( Tidx );
+                V = V( Tidx );
+                %----------------------------------------------------------
+                % Determine the deischarge pulse reference voltage
+                %----------------------------------------------------------
+                Vref = V( floor( median( 1:numel( Tidx ) ) ) );
+                %----------------------------------------------------------
+                % Find the discharge & charge pulse event locations
+                %----------------------------------------------------------
+                [ ~, Dfinish ] = obj.locateDischgPulse( I );
+                Cstart = obj.locateChgPulse( I );
+                %----------------------------------------------------------
+                % Discharge value
+                %----------------------------------------------------------
+                D_DV( Q ) = abs( ( Vref - V( Dfinish ) ) );
+                D_DI( Q ) = abs( min( I ) );
+                D_IR( Q ) =  D_DV( Q ) / D_DI( Q );
+                %----------------------------------------------------------
+                % Charge value
+                %----------------------------------------------------------
+                C_DV( Q ) = abs( ( max( V ) - V( Cstart - 1 ) ) );
+                C_DI( Q ) = max( I );
+                C_IR( Q ) =  C_DV( Q )/ C_DI( Q );
+            end
+        end % calcIR
+        
+        function SoC = calcSoC( obj, T, Start, Finish )
+            %--------------------------------------------------------------
+            % Calculate the event state of charge
+            %
+            % Soc = obj.calcSoC( T, Start, Finish );
+            %
+            % Input Arguments:
+            %
+            % T         --> (table) data table
+            % Start     --> (double) start of discharge events
+            % Finish    --> (double) finish of discharge events
+            %--------------------------------------------------------------
+            N = numel( Start );                                             % Number of cycles
+            C = T.( obj.Capacity_ );                                        % Capacity data
+            MaxCap = max( C );                                              % Maximum capacity
+            SoC = zeros( N, 1 );                                            % Define storage
+            for Q = 1:N
+                %----------------------------------------------------------
+                % Calculate the SoC
+                %----------------------------------------------------------
+                if ( Q < N )
+                    S = max( C( ( Finish( Q ) ):Start( Q + 1 ) ) );
+                else
+                    S = C( Finish( Q ) + 1 );
+                end
+                SoC( Q ) = S / MaxCap;
+            end
+        end % calcSoC
+        
+        function [ Start, Finish ] = locEvents( obj, T, EventChannel )
+            %--------------------------------------------------------------
+            % Locate start and finish of discharge events
+            %
+            % [ Start, Finish ] = obj.locEvents( T, , EventChannel );
+            %
+            % Input Arguments:
+            %
+            % T             --> (table) data table
+            % EventChannel  --> (string) Name of channel defining event
+            %--------------------------------------------------------------
+            Tgt = obj.DischgCurrent;
+            C = ( T.( EventChannel ) );
+            Idx = ( abs( C - Tgt ) < 0.05 );                                % locate the discharge pulses
+            C( ~Idx ) = 0; 
+            %--------------------------------------------------------------
+            % Locate the start and finish of the discharge pulses
+            %--------------------------------------------------------------
+            S = sign( C );
+            S( S > 0 ) = 0;
+            S = diff( S );
+            Start = find( S < 0, numel( S ), 'first' );
+            Start = Start + 1;
+            Finish = find( S > 0, numel( S ), 'first' );
+            Finish = Finish + 1;
+        end % locEvents
+    end % protected methods
     
     methods ( Static = true, Access = protected )
         function ExcelFile = makeExcelFile( FileName )
@@ -274,45 +404,41 @@ classdef (Abstract = true ) pulseTestDataImporter
             [LastRow, LastCol ] = findLastRow( ExcelFile, SheetName );
         end % findLastRow
         
-        function [ Start, Finish ] = locEvents( T, EventChannel )
+        function [ Start, Finish ] = locateDischgPulse( I )
             %--------------------------------------------------------------
-            % Locate start and finish of discharge events
+            % Locate the short discharge pulse event locations
             %
-            % [ Start, Finish ] = obj.locEvents( T, , EventChannel );
+            % [ Start, Finish ] = obj.locateDischgPulse( I );
             %
             % Input Arguments:
             %
-            % T             --> (table) data table
-            % EventChannel  --> (string) Name of channel defining event
+            % I     --> Current trace
             %--------------------------------------------------------------
-            S = sign( T.( EventChannel ) );
-            S( S > 0 ) = 0;
+            I( I > 0 ) = 0;
+            S = sign( I );
             S = diff( S );
-            Start = find( S < 0, numel( S ), 'first' );
+            Start = find( S < 0, 1, 'first' );
             Start = Start + 1;
-            Finish = find( S > 0, numel( S ), 'first' );
+            Finish = find( S > 0, 1, 'first' );
             Finish = Finish + 1;
-        end % locEvents
+        end % locateDischgPulse
         
-        function N = numCycles( T, EventChannel )
+        function [ Start, Finish ] = locateChgPulse( I )
             %--------------------------------------------------------------
-            % Return number of cycles
+            % Locate the short charge pulse event locations
             %
-            % N = obj.numCycles( T, EventChannel );
+            % [ Start, Finish ] = obj.locateChgPulse( I );
             %
             % Input Arguments:
             %
-            % T             --> (table) data table
-            % EventChannel  --> (string) Name of channel defining event
-            %
-            % Output Arguments:
-            %
-            % N             --> Number of cycles
+            % I     --> Current trace
             %--------------------------------------------------------------
-            S = sign( T.( EventChannel ) );
-            S( S > 0 ) = 0;
-            S = diff( S );
-            N = sum( S < 0 );
-        end % numCycles    
+            I( I < 0 ) = 0;
+            I = diff( I );
+            Start = find( I > 0, 1, 'first' );
+            Start = Start + 1;
+            Finish = find( I < 0, 1, 'first' );
+            Finish = Finish + 1;
+        end % locateChgPulse        
     end % protected static methods
 end % pulseTestDataImporter

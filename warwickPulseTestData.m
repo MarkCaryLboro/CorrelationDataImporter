@@ -1,5 +1,5 @@
 classdef warwickPulseTestData < pulseTestDataImporter
-    % Concrete rate test data interface for facility correlation analysis
+    % Concrete pulse test data interface for facility correlation analysis
     % for Warwick data    
     
     properties ( Constant = true )
