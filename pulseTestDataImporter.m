@@ -203,15 +203,17 @@ classdef (Abstract = true ) pulseTestDataImporter
     end % GET/SET Methods
     
     methods ( Access = protected )
-        function [ D_IR, C_IR, D_DV, D_DI, C_DV, C_DI ] = calcIR( obj, T, Start, Finish )
+        function [ D_IR, C_IR, D_DV, D_DI, C_DV, C_DI ] = calcIR( obj, T, Start, Finish, Lag )
             %--------------------------------------------------------------
             % Calculate the discharge and charge internal resistance values
             %
-            % [ D_IR, C_IR ] = obj.calcIR( T, Start, Finish );
+            % [ D_IR, C_IR ] = obj.calcIR( T, Start, Finish, Lag );
             %
             % T         --> (table) data table
             % Start     --> (double) start of discharge events
             % Finish    --> (double) finish of discharge events
+            % Lag       --> (double) offset to apply to the voltage data.
+            %               Default is zero.
             %
             % Output Arguments
             %
@@ -222,6 +224,11 @@ classdef (Abstract = true ) pulseTestDataImporter
             % C_DV  --> Charge pulse delta voltage
             % C_DI  --> Charge pulse delta current
             %--------------------------------------------------------------
+            if ( nargin < 5 ) || isempty( Lag )
+                Lag = 0;
+            else
+                Lag = round( Lag );
+            end
             N = numel( Start );
             [ D_IR, C_IR, D_DV, D_DI, C_DV, C_DI ] = deal( zeros( N, 1 ) );
             %--------------------------------------------------------------
@@ -243,24 +250,21 @@ classdef (Abstract = true ) pulseTestDataImporter
                 I = I( Tidx );
                 V = V( Tidx );
                 %----------------------------------------------------------
-                % Determine the deischarge pulse reference voltage
-                %----------------------------------------------------------
-                Vref = V( floor( median( 1:numel( Tidx ) ) ) );
-                %----------------------------------------------------------
                 % Find the discharge & charge pulse event locations
                 %----------------------------------------------------------
-                [ ~, Dfinish ] = obj.locateDischgPulse( I );
-                Cstart = obj.locateChgPulse( I );
+                [ Dstart, Dfinish ] = obj.locateDischgPulse( I );
+                [ Cstart, Cfinish ] = obj.locateChgPulse( I );
                 %----------------------------------------------------------
                 % Discharge value
                 %----------------------------------------------------------
-                D_DV( Q ) = abs( ( Vref - V( Dfinish ) ) );
+                D_DV( Q ) = abs( ( V( Dstart + Lag ) - V( Dfinish + Lag )...
+                                                                       ) );
                 D_DI( Q ) = abs( min( I ) );
                 D_IR( Q ) =  D_DV( Q ) / D_DI( Q );
                 %----------------------------------------------------------
                 % Charge value
                 %----------------------------------------------------------
-                C_DV( Q ) = abs( ( max( V ) - V( Cstart - 1 ) ) );
+                C_DV( Q ) = abs( ( V( Cfinish ) - V( Cstart - 1 - Lag ) ) );
                 C_DI( Q ) = max( I );
                 C_IR( Q ) =  C_DV( Q )/ C_DI( Q );
             end
@@ -437,7 +441,7 @@ classdef (Abstract = true ) pulseTestDataImporter
             I = diff( I );
             Start = find( I > 0, 1, 'first' );
             Start = Start + 1;
-            Finish = find( I < 0, 1, 'first' );
+            Finish = find( I < 0, 1, 'last' );
             Finish = Finish + 1;
         end % locateChgPulse        
     end % protected static methods
