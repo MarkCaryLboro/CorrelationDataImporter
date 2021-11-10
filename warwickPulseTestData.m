@@ -91,15 +91,15 @@ classdef warwickPulseTestData < pulseTestDataImporter
                 Start = Start( 1:( end - 1 ) );
                 Finish = Finish( 1:( end - 1 ) );
                 NumCyc = numel( Start );
-                %--------------------------------------------------------------
+                %----------------------------------------------------------
                 % Calculate the state of charge
-                %--------------------------------------------------------------
+                %----------------------------------------------------------
                 SoC = obj.calcSoC( T, Start, Finish );
-                %--------------------------------------------------------------
+                %----------------------------------------------------------
                 % Calculate the discharge internal resistance values
-                %--------------------------------------------------------------
+                %----------------------------------------------------------
                 [ DischargeIR, ChargeIR, DV, DI, CV, CI ] = obj.calcIR( T,...
-                    Start, Finish, 2 );
+                    Start, Finish );
                 %----------------------------------------------------------
                 % Write the current data to a summary data and append it
                 % to the data table
@@ -146,7 +146,7 @@ classdef warwickPulseTestData < pulseTestDataImporter
     
     
     methods ( Access = protected )       
-        function T = getTemperature( obj, Data, Str )  
+        function T = getTemperature( obj, Data, Str )                       %#ok<INUSL>
             %--------------------------------------------------------------
             % Parse the ageing temperature
             %

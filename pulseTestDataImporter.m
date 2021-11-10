@@ -180,6 +180,9 @@ classdef (Abstract = true ) pulseTestDataImporter
         end % setCurrentChannel    
     end % ordinary methods    
     
+    methods ( Access = protected )
+    end % protected methods
+    
     methods
         function N = get.NumFiles( obj )
             % Return number of files in datastore
@@ -203,17 +206,15 @@ classdef (Abstract = true ) pulseTestDataImporter
     end % GET/SET Methods
     
     methods ( Access = protected )
-        function [ D_IR, C_IR, D_DV, D_DI, C_DV, C_DI ] = calcIR( obj, T, Start, Finish, Lag )
+        function [ D_IR, C_IR, D_DV, D_DI, C_DV, C_DI ] = calcIR( obj, T, Start, Finish )
             %--------------------------------------------------------------
             % Calculate the discharge and charge internal resistance values
             %
-            % [ D_IR, C_IR ] = obj.calcIR( T, Start, Finish, Lag );
+            % [ D_IR, C_IR ] = obj.calcIR( T, Start, Finish );
             %
             % T         --> (table) data table
             % Start     --> (double) start of discharge events
             % Finish    --> (double) finish of discharge events
-            % Lag       --> (double) offset to apply to the voltage data.
-            %               Default is zero.
             %
             % Output Arguments
             %
@@ -224,11 +225,6 @@ classdef (Abstract = true ) pulseTestDataImporter
             % C_DV  --> Charge pulse delta voltage
             % C_DI  --> Charge pulse delta current
             %--------------------------------------------------------------
-            if ( nargin < 5 ) || isempty( Lag )
-                Lag = 0;
-            else
-                Lag = round( Lag );
-            end
             N = numel( Start );
             [ D_IR, C_IR, D_DV, D_DI, C_DV, C_DI ] = deal( zeros( N, 1 ) );
             %--------------------------------------------------------------
@@ -236,41 +232,52 @@ classdef (Abstract = true ) pulseTestDataImporter
             %--------------------------------------------------------------
             Vname = obj.Voltage_;
             Iname = obj.Current_;
+            I = T.( Iname );
+            V = T.( Vname );
+            BI = max( abs( [ min( I ), max( I ) ] ) );
+            AI = - BI;
+            BV = max( abs( [ min( V ), max( V ) ] ) );
+            AV = -BV;
+            Ic = obj.codeData( I, AI, BI );
+            Vc = obj.codeData( V, AV, BV );
             for Q=1:N
                 %----------------------------------------------------------
                 % Calculate the internal resistance values
                 %----------------------------------------------------------
-                I = T.( Iname );
-                V = T.( Vname );
                 if ( Q < N )
                     Tidx = Finish( Q ):Start( Q + 1 );
                 else
-                    Tidx = Finish( Q ):numel( V );
+                    Tidx = Finish( Q ):numel( Vc );
                 end
-                I = I( Tidx );
-                V = V( Tidx );
+                I = Ic( Tidx );
+                V = Vc( Tidx );
                 %----------------------------------------------------------
                 % Find the discharge & charge pulse event locations
                 %----------------------------------------------------------
-                [ Dstart, Dfinish ] = obj.locateDischgPulse( I );
-                [ Cstart, Cfinish ] = obj.locateChgPulse( I );
+                [ Dstart, Dfinish, DLag ] = obj.locateDischgPulse( I, V );
+                [ Cstart, Cfinish, CLag ] = obj.locateChgPulse( I, V );
                 %----------------------------------------------------------
                 % Discharge value
                 %----------------------------------------------------------
-                D_DV( Q ) = abs( ( V( Dstart + Lag ) - V( Dfinish + Lag )...
+                D_DV( Q ) = abs( ( V( Dstart + DLag ) - V( Dfinish + DLag )...
                                                                        ) );
-                D_DI( Q ) = abs( min( I ) );
-                D_IR( Q ) =  D_DV( Q ) / D_DI( Q );
+                D_DI( Q ) = min( I );
+%                 D_IR( Q ) =  D_DV( Q ) / D_DI( Q );
                 %----------------------------------------------------------
                 % Charge value
                 %----------------------------------------------------------
-                C_DV( Q ) = abs( ( V( Cfinish ) - V( Cstart - 1 - Lag ) ) );
+                C_DV( Q ) = abs( ( V( Cfinish ) - V( Cstart - 1 - CLag ) ) );
                 C_DI( Q ) = max( I );
-                C_IR( Q ) =  C_DV( Q )/ C_DI( Q );
             end
+            D_DV = obj.decodeData( D_DV, AV, BV );
+            D_DI = abs( obj.decodeData( D_DI, AI, BI ) );
+            D_IR =  D_DV ./ D_DI;
+            C_DV = obj.decodeData( C_DV, AV, BV );
+            C_DI = abs( obj.decodeData( C_DI, AI, BI ) );
+            C_IR =  C_DV ./ C_DI;        
         end % calcIR
         
-        function SoC = calcSoC( obj, T, Start, Finish )
+        function [ SoC, MaxCap ] = calcSoC( obj, T, Start, Finish )
             %--------------------------------------------------------------
             % Calculate the event state of charge
             %
@@ -281,6 +288,11 @@ classdef (Abstract = true ) pulseTestDataImporter
             % T         --> (table) data table
             % Start     --> (double) start of discharge events
             % Finish    --> (double) finish of discharge events
+            %
+            % Output Arguments:
+            %
+            % SoC       --> (double) State of charge vector
+            % MaxCap    --> (double) Maximum observed capacity of the cell
             %--------------------------------------------------------------
             N = numel( Start );                                             % Number of cycles
             C = T.( obj.Capacity_ );                                        % Capacity data
@@ -299,20 +311,33 @@ classdef (Abstract = true ) pulseTestDataImporter
             end
         end % calcSoC
         
-        function [ Start, Finish ] = locEvents( obj, T, EventChannel )
+        function [ Start, Finish ] = locEvents( obj, T, EventChannel, Thresh )
             %--------------------------------------------------------------
             % Locate start and finish of discharge events
             %
-            % [ Start, Finish ] = obj.locEvents( T, , EventChannel );
+            % [ Start, Finish ] = obj.locEvents( T, EventChannel, Thresh );
             %
             % Input Arguments:
             %
             % T             --> (table) data table
             % EventChannel  --> (string) Name of channel defining event
+            % Thresh        --> (double) test threshold for detecting the
+            %                            charge pulse { 0.05 } [A].
             %--------------------------------------------------------------
-            Tgt = obj.DischgCurrent;
+            if ( nargin < 4 ) || isempty( Thresh )
+                Thresh = 0.05;
+            else
+                Thresh = double( Thresh );
+            end
+            %--------------------------------------------------------------
+            % Code the data onto the interval [ -1, 1 ]
+            %--------------------------------------------------------------
             C = ( T.( EventChannel ) );
-            Idx = ( abs( C - Tgt ) < 0.05 );                                % locate the discharge pulses
+            B = max( abs( [ max( C ), min( C ) ] ) );
+            A = -B;
+            Xc = obj.codeData( C, A, B );
+            Tgt = obj.codeData( obj.DischgCurrent, A, B );
+            Idx = ( abs( Xc - Tgt ) < Thresh );                             % locate the discharge pulses
             C( ~Idx ) = 0; 
             %--------------------------------------------------------------
             % Locate the start and finish of the discharge pulses
@@ -328,6 +353,54 @@ classdef (Abstract = true ) pulseTestDataImporter
     end % protected methods
     
     methods ( Static = true, Access = protected )
+        function [ Xc, A, B ] = codeData( X, A, B )
+            %--------------------------------------------------------------
+            % Code the supplied data onto the interval [ -1, 1 ]
+            %
+            % Xc = obj.codeData( X, A, B );
+            %
+            % Input Arguments:
+            %
+            % X     --> (double) data in engineering units
+            % A     --> (double) minimum value in natural scale A --> -1
+            % B     --> (double) maximum value in natural scale B --> +1
+            %
+            % Output Arguments:
+            % Xc    --> (double) coded data
+            % A     --> (double) minimum supplied data value
+            % B     --> (double) maximum supplied data value
+            %--------------------------------------------------------------
+            if ( nargin < 2 ) || isempty( A )
+                A = min( X );
+            end
+            if ( nargin < 3 ) || isempty( B )
+                B = max( X );
+            end
+            C = mean( [ A, B ] );
+            Xc = 2 * ( X - C ) / ( B - A );
+        end % codeData
+        
+        function X = decodeData( Xc, A, B )
+            %--------------------------------------------------------------
+            % Code the supplied data onto the interval [ -1, 1 ]
+            %
+            % X = obj.decodeData( Xc, A, B );
+            %
+            % Input Arguments:
+            %
+            % Xc    --> (double) data in coded units
+            % A     --> (double) minimum value in natural scale A --> -1
+            % B     --> (double) maximum value in natural scale B --> +1
+            %
+            % Output Arguments:
+            % X     --> (double) data in natural units
+            % A     --> (double) minimum supplied data value
+            % B     --> (double) maximum supplied data value
+            %--------------------------------------------------------------
+            C = mean( [ A, B ] );
+            X = 0.5 * ( B - A ) * Xc + C;
+        end % decodeData        
+        
         function ExcelFile = makeExcelFile( FileName )
             %--------------------------------------------------------------
             % Make sure the export file is an ".xlsx" file
@@ -408,7 +481,7 @@ classdef (Abstract = true ) pulseTestDataImporter
             [LastRow, LastCol ] = findLastRow( ExcelFile, SheetName );
         end % findLastRow
         
-        function [ Start, Finish ] = locateDischgPulse( I )
+        function [ Start, Finish, Lag ] = locateDischgPulse( I, V )
             %--------------------------------------------------------------
             % Locate the short discharge pulse event locations
             %
@@ -417,6 +490,13 @@ classdef (Abstract = true ) pulseTestDataImporter
             % Input Arguments:
             %
             % I     --> Current trace
+            % V     --> Voltage trace
+            %
+            % Output Arguments:
+            % 
+            % Start     --> Starting index for discharge pulse
+            % Finish    --> Finishing index for discharge pulse
+            % Lag       --> Offset to corresponding voltage events
             %--------------------------------------------------------------
             I( I > 0 ) = 0;
             S = sign( I );
@@ -425,17 +505,34 @@ classdef (Abstract = true ) pulseTestDataImporter
             Start = Start + 1;
             Finish = find( S > 0, 1, 'first' );
             Finish = Finish + 1;
+            %--------------------------------------------------------------
+            % Now find the initial lag estimate based on the position of 
+            % the voltage pulse
+            %--------------------------------------------------------------
+            S = diff( round( V, 2 ) );
+            Vstart = find( S < 0, 1, 'first' );
+            %--------------------------------------------------------------
+            % Now tune the lag estimate for the start of the voltage pulse
+            %--------------------------------------------------------------
+            Lag = Vstart - Start;
         end % locateDischgPulse
         
-        function [ Start, Finish ] = locateChgPulse( I )
+        function [ Start, Finish, Lag ] = locateChgPulse( I, V )
             %--------------------------------------------------------------
             % Locate the short charge pulse event locations
             %
-            % [ Start, Finish ] = obj.locateChgPulse( I );
+            % [ Start, Finish, Lag ] = obj.locateChgPulse( I, V );
             %
             % Input Arguments:
             %
             % I     --> Current trace
+            % V     --> Voltage trace
+            %
+            % Output Arguments:
+            % 
+            % Start     --> Starting index for discharge pulse
+            % Finish    --> Finishing index for discharge pulse
+            % Lag       --> Offset to corresponding voltage events
             %--------------------------------------------------------------
             I( I < 0 ) = 0;
             I = diff( I );
@@ -443,6 +540,12 @@ classdef (Abstract = true ) pulseTestDataImporter
             Start = Start + 1;
             Finish = find( I < 0, 1, 'last' );
             Finish = Finish + 1;
+            %--------------------------------------------------------------
+            % Now find the lag based on the position of the minimum voltage
+            % value
+            %--------------------------------------------------------------
+            [ ~, VmnLoc ] = max( V );
+            Lag = VmnLoc - Finish;
         end % locateChgPulse        
     end % protected static methods
 end % pulseTestDataImporter

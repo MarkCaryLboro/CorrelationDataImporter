@@ -96,7 +96,7 @@ classdef lancasterPulseTestData < pulseTestDataImporter
                 % Calculate the discharge internal resistance values
                 %----------------------------------------------------------
                 [ DischargeIR, ChargeIR, DV, DI, CV, CI ] = obj.calcIR( T,...
-                                                           Start, Finish, 2 );
+                                                           Start, Finish );
                 %----------------------------------------------------------
                 % Write the current data to a summary data and append it 
                 % to the data table
