@@ -140,7 +140,6 @@ classdef imperialPulseTestData < pulseTestDataImporter
                 "[A]", "[V]", "[A]" ] );
             close( W );
         end % extractData
-
         
         function obj = setDischgCurrent( obj, Dc )
             %--------------------------------------------------------------

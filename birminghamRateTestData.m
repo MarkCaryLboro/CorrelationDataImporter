@@ -50,7 +50,7 @@ classdef birminghamRateTestData < rateTestDataImporter
                 ReadFunc );
             obj.Signals = obj.readSignals();
             warning on;
-        end % oxfordRateTestData
+        end % birminghamRateTestData
         
         function obj = setState( obj, Name )
             %--------------------------------------------------------------
