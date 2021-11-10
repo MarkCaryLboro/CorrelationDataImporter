@@ -1,6 +1,6 @@
 classdef imperialPulseTestData < pulseTestDataImporter
     % Concrete pulse test data interface for facility correlation analysis
-    % for Warwick data
+    % for Imperial data
     
     properties ( SetAccess = protected )
         Current               string                = "I_mA"                % Name of current channel
