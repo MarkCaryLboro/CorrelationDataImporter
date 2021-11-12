@@ -226,7 +226,7 @@ classdef (Abstract = true ) pulseTestDataImporter
             % C_DI  --> Charge pulse delta current
             %--------------------------------------------------------------
             N = numel( Start );
-            [ D_IR, C_IR, D_DV, D_DI, C_DV, C_DI ] = deal( zeros( N, 1 ) );
+            [ D_DV, D_DI, C_DV, C_DI ] = deal( zeros( N, 1 ) );
             %--------------------------------------------------------------
             % Define voltage and current channel names in the data table
             %--------------------------------------------------------------
@@ -262,7 +262,6 @@ classdef (Abstract = true ) pulseTestDataImporter
                 D_DV( Q ) = abs( ( V( Dstart + DLag ) - V( Dfinish + DLag )...
                                                                        ) );
                 D_DI( Q ) = min( I );
-%                 D_IR( Q ) =  D_DV( Q ) / D_DI( Q );
                 %----------------------------------------------------------
                 % Charge value
                 %----------------------------------------------------------
@@ -302,11 +301,7 @@ classdef (Abstract = true ) pulseTestDataImporter
                 %----------------------------------------------------------
                 % Calculate the SoC
                 %----------------------------------------------------------
-                if ( Q < N )
-                    S = max( C( ( Finish( Q ) ):Start( Q + 1 ) ) );
-                else
-                    S = C( Finish( Q ) + 1 );
-                end
+                S = max( C( ( Start( Q ) ):Finish( Q ) ) );
                 SoC( Q ) = S / MaxCap;
             end
         end % calcSoC

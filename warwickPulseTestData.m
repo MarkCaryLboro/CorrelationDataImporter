@@ -81,11 +81,15 @@ classdef warwickPulseTestData < pulseTestDataImporter
                 %----------------------------------------------------------
                 SerialNumber = obj.getSerialNumber( obj.Ds.Files( Q ) );
                 Temperature = obj.getTemperature( T );
-                %--------------------------------------------------------------
+                %----------------------------------------------------------
+                % Make sure caapacity measures are positive
+                %----------------------------------------------------------
+                T = obj.invertCapacity( T );
+                %----------------------------------------------------------
                 % Calculate number and location of the pulses
-                %--------------------------------------------------------------
+                %----------------------------------------------------------
                 [ Start, Finish ] = obj.locEvents( T, obj.Current_ );
-                %--------------------------------------------------------------
+                %----------------------------------------------------------
                 % Remove the last pulse which looks dodgey
                 %--------------------------------------------------------------
                 Start = Start( 1:( end - 1 ) );
@@ -95,6 +99,8 @@ classdef warwickPulseTestData < pulseTestDataImporter
                 % Calculate the state of charge
                 %----------------------------------------------------------
                 SoC = obj.calcSoC( T, Start, Finish );
+                SoC = cumsum( SoC );
+                SoC = 1 - SoC;
                 %----------------------------------------------------------
                 % Calculate the discharge internal resistance values
                 %----------------------------------------------------------
@@ -211,38 +217,21 @@ classdef warwickPulseTestData < pulseTestDataImporter
             T.Properties.VariableNames = Signals;
             T.Properties.VariableUnits = Units;
         end % customreader    
-        
-        function SoC = calcSoC( obj, T, Start, Finish )
-            %--------------------------------------------------------------
-            % Calculate the event state of charge
-            %
-            % Soc = obj.calcSoC( T, Start, Finish );
-            %
-            % Input Arguments:
-            %
-            % T         --> (table) data table
-            % Start     --> (double) start of discharge events
-            % Finish    --> (double) finish of discharge events
-            %--------------------------------------------------------------
-            N = numel( Start );                                             % Number of cycles
-            C = T.( obj.Capacity_ );                                        % Capacity data
-            MaxCap = max( C );                                              % Maximum capacity
-            SoC = zeros( N, 1 );                                            % Define storage
-            for Q = 1:N
-                %----------------------------------------------------------
-                % Calculate the SoC
-                %----------------------------------------------------------
-                if ( Q < N )
-                    S = min( C( ( Finish( Q ) ):Start( Q + 1 ) ) );
-                else
-                    S = C( Finish( Q ) + 1 );
-                end
-                SoC( Q ) = ( MaxCap + ( Q * S ) ) / MaxCap;
-            end
-        end % calcSoC    
     end % protected methods
     
     methods ( Access = private )
+        function T = invertCapacity( obj, T )
+            %--------------------------------------------------------------
+            % Make sure capacity measures are positive
+            %
+            % T = obj.invertDischargeCurrent( T );
+            %
+            % Input Arguments:
+            %
+            % T     --> Data table for the current file
+            %--------------------------------------------------------------
+            T.( obj.Capacity_ ) = abs( T.( obj.Capacity_ ) );
+        end % invertCapacity
     end % private methods
     
     methods ( Static = true, Access = protected )    

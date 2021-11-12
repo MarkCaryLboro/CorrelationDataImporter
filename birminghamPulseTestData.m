@@ -12,8 +12,8 @@ classdef birminghamPulseTestData < pulseTestDataImporter
         Current               string                = "Amps"                % Name of current channel
         Capacity              string                = "Amp_hr"              % Name of capacity channel
         State                 string                = "State"               % Channel indicating cell states
-        Voltage               string                = "Ecell_V"             % Name of voltage channel
-        DischgCurrent         double                = -1.67e3               % Discharge current 
+        Voltage               string                = "Volts"               % Name of voltage channel
+        DischgCurrent         double                = -1.667                % Discharge current 
     end % protected properties    
     
     methods
@@ -111,7 +111,6 @@ classdef birminghamPulseTestData < pulseTestDataImporter
                 % Capture metadata
                 %----------------------------------------------------------
                 SerialNumber = obj.getSerialNumber( Q );
-                CRate = obj.getCRate( Q );
                 try
                     %------------------------------------------------------
                     % Try to capture temperature data from data table
@@ -126,26 +125,36 @@ classdef birminghamPulseTestData < pulseTestDataImporter
                 %----------------------------------------------------------
                 % Calculate number and location of the discharge events
                 %----------------------------------------------------------
-                NumCyc = obj.numCycles( T, obj.State );
                 T = obj.invertDischargeCurrent( T );
                 [ Start, Finish ] = obj.locEvents( T, obj.Current_ );
-                Cycle = ( 1:NumCyc ).';
                 %----------------------------------------------------------
-                % Calculate the discharge capacity
+                % Remove the last pulse which is not required
                 %----------------------------------------------------------
-                DischargeCapacity = ( T.( obj.Capacity_ )( Finish - 1 ) -....
-                    T.( obj.Capacity_ )( Start ) );
+                Start = Start( 1:( end - 1 ) );
+                Finish = Finish( 1:( end - 1 ) );
+                NumCyc = numel( Start );
                 %----------------------------------------------------------
-                % Write the curreent data to a summary data and append it
+                % Calculate the state of charge
+                %----------------------------------------------------------
+                SoC = obj.calcSoC( T, Start, Finish );
+                SoC = cumsum( SoC );
+                SoC = 1 - SoC;
+                %----------------------------------------------------------
+                % Calculate the discharge internal resistance values
+                %----------------------------------------------------------
+                [ DischargeIR, ChargeIR, DV, DI, CV, CI ] = obj.calcIR( T,...
+                    Start, Finish );
+                %----------------------------------------------------------
+                % Write the current data to a summary data and append it
                 % to the data table
                 %----------------------------------------------------------
                 SerialNumber = repmat( SerialNumber, NumCyc, 1 );
                 Temperature = repmat( Temperature, NumCyc, 1 );
-                CRate = repmat( CRate, NumCyc, 1 );
                 Facility = string( repmat( obj.Facility, NumCyc, 1 ) );     %#ok<PROP>
                 BatteryName = repmat( obj.Battery, NumCyc, 1 );
-                T = table( BatteryName, SerialNumber, CRate, Cycle,...
-                    Facility, Temperature, DischargeCapacity );             %#ok<PROP>
+                T = table( BatteryName, SerialNumber, Facility,...
+                    Temperature, SoC, DischargeIR, ChargeIR, DV, DI,...
+                    CV, CI );                                               %#ok<PROP>
                 if isempty( obj.Data )
                     obj.Data = T;
                 else
@@ -155,8 +164,9 @@ classdef birminghamPulseTestData < pulseTestDataImporter
             %--------------------------------------------------------------
             % Define the units
             %--------------------------------------------------------------
-            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA",...
-                "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
+            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA", "NA",...
+                "[Deg C]", "[%]", "[Ohms]", "[Ohms]" , "[V]",...
+                "[A]", "[V]", "[A]" ] );
             close( W );
         end % extractData
         
@@ -177,6 +187,68 @@ classdef birminghamPulseTestData < pulseTestDataImporter
             obj.DischgCurrent = Dc;
         end % setDischgCurrent        
     end % ordinary and constructor methods
+    
+    methods ( Access = protected )
+        function T = getTemperatureFname( obj, Q )
+            %--------------------------------------------------------------
+            % Parse the temperature data from the file name
+            %
+            % T = obj.getTemperatureFname( Q );
+            %
+            %
+            % Input Arguments:
+            %
+            % Q   --> Pointer to current file
+            %--------------------------------------------------------------
+            Name = obj.Ds.Files{ Q };
+            if contains( Name, "25" )
+                T = 25;
+            else
+                error('Cannot determine test temperature in file "%s"',...
+                                Name );
+            end
+        end % getTemperatureFname
+        
+        function T = getTemperature( obj, DataTable, Str )  
+            %--------------------------------------------------------------
+            % Parse the ageing temperature from data
+            %
+            % T = obj.getTemperature( Q, Str );
+            %
+            % Input Arguments:
+            %
+            % DataTable     --> Data table
+            % Str           --> Name of temeperature channel {"EVTempC"}
+            %--------------------------------------------------------------
+            if ( nargin < 3 )
+                Str = "EVTempC";                                            % Apply the default
+            else
+                Str = string( Str );
+            end
+            Ok = obj.channelPresent( Str );
+            if Ok
+                %----------------------------------------------------------
+                % Assign the temperature from measurement
+                %----------------------------------------------------------
+                T = median( DataTable.( Str ) );
+            end
+        end % getTemperature        
+        
+        function SerialNumber = getSerialNumber( obj, Q )
+            %--------------------------------------------------------------
+            % Parse the battery serial number information
+            %
+            % SerialNumber = obj.getSerialNumber( Q );
+            %
+            % Input Arguments:
+            %
+            % Q   --> pointer to file
+            %--------------------------------------------------------------
+            L = obj.Ds.Files{ Q };
+            SerialNumber = string( extractBetween( L, "_Cell",...
+                                                      "_Pulse_Test" ) );
+        end % getSerialNumber
+    end % protected methods
     
     methods ( Access = private )
         function S = readSignals( obj )

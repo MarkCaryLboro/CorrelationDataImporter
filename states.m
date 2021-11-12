@@ -1,4 +1,5 @@
 classdef states < int8
+    % State variables for Birmingham data...
     
     enumeration
         O   (0)
