@@ -320,7 +320,7 @@ classdef (Abstract = true ) pulseTestDataImporter
             %                            charge pulse { 0.05 } [A].
             %--------------------------------------------------------------
             if ( nargin < 4 ) || isempty( Thresh )
-                Thresh = 0.05;
+                Thresh = 0.005;
             else
                 Thresh = double( Thresh );
             end

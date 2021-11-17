@@ -51,7 +51,7 @@ classdef birminghamPulseTestData < pulseTestDataImporter
                 ReadFunc );
             obj.Signals = obj.readSignals();
             warning on;
-        end % oxfordRateTestData
+        end % birminghamPulseTestData
         
         function obj = setState( obj, Name )
             %--------------------------------------------------------------
@@ -75,7 +75,7 @@ classdef birminghamPulseTestData < pulseTestDataImporter
                 warning('Cannot set "State". Signal "%s" not in the signals list',...
                         Name);
             end
-        end
+        end % setState
         
         function obj = extractData( obj )
             %--------------------------------------------------------------

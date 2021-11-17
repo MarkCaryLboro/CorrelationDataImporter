@@ -142,6 +142,36 @@ classdef lancasterPulseTestData < pulseTestDataImporter
     end % ordinary & constructor methods
     
     methods ( Access = protected )
+        function [ SoC, MaxCap ] = calcSoC( obj, T, Start, Finish )
+            %--------------------------------------------------------------
+            % Calculate the event state of charge
+            %
+            % Soc = obj.calcSoC( T, Start, Finish );
+            %
+            % Input Arguments:
+            %
+            % T         --> (table) data table
+            % Start     --> (double) start of discharge events
+            % Finish    --> (double) finish of discharge events
+            %
+            % Output Arguments:
+            %
+            % SoC       --> (double) State of charge vector
+            % MaxCap    --> (double) Maximum observed capacity of the cell
+            %--------------------------------------------------------------
+            N = numel( Start );                                             % Number of cycles
+            C = T.( obj.Capacity_ );                                        % Capacity data
+            MaxCap = max( C );                                              % Maximum capacity
+            SoC = zeros( N, 1 );                                            % Define storage
+            for Q = 1:N
+                %----------------------------------------------------------
+                % Calculate the SoC
+                %----------------------------------------------------------
+                S = min( C( ( Start( Q ) ):Finish( Q ) ) );
+                SoC( Q ) = S / MaxCap;
+            end
+        end % calcSoC        
+        
         function T = getTemperature( obj, Q, Str )  
             %--------------------------------------------------------------
             % Parse the ageing temperature
