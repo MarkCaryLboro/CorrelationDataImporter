@@ -13,6 +13,9 @@ classdef warwickPulseTestData < pulseTestDataImporter
         Capacity              string                = "AhAccu"              % Name of capacity channel
         Voltage               string                = "Voltage"             % Name of voltage channel
         DischgCurrent         double          = -1.67                       % Discharge current 
+        PulseTime             double                = 10                    % Required pulse time [s]
+        Time                  string                = "Prog Time"           % Name of time channel
+        CF                    double                = 1                     % Conversion factor to time in hours
     end % protected properties    
     
     methods
@@ -149,223 +152,238 @@ classdef warwickPulseTestData < pulseTestDataImporter
             obj.DischgCurrent = Dc;
         end % setDischgCurrent
      end % constructor and ordinary methods
-    
-    
-    methods ( Access = protected )       
-        function T = getTemperature( obj, Data, Str )                       %#ok<INUSL>
-            %--------------------------------------------------------------
-            % Parse the ageing temperature
-            %
-            % T = obj.getTemperature( Data, Str );
-            %
-            % Input Arguments:
-            %
-            % Data  --> Data table
-            % Str   --> search string. Name of temperature channel
-            %--------------------------------------------------------------
-            if ( nargin < 3 )
-                Str = "LogTemp001";                                         % Apply the default
-            end    
-            T = Data.( Str );
-            T = T( ~isnan( T ) );
-            T = round( median( T ) );
-        end % getTemperature
+     
+     
+     methods ( Access = protected )
+         function T = getTemperature( obj, Data, Str )                       %#ok<INUSL>
+             %--------------------------------------------------------------
+             % Parse the ageing temperature
+             %
+             % T = obj.getTemperature( Data, Str );
+             %
+             % Input Arguments:
+             %
+             % Data  --> Data table
+             % Str   --> search string. Name of temperature channel
+             %--------------------------------------------------------------
+             if ( nargin < 3 )
+                 Str = "LogTemp001";                                         % Apply the default
+             end
+             T = Data.( Str );
+             T = T( ~isnan( T ) );
+             T = round( median( T ) );
+         end % getTemperature
+         
+         function T = customreader( obj, Fname )
+             %--------------------------------------------------------------
+             % Custom reader file for Warwick pulse test data and return a
+             % table of data
+             %
+             % T = obj.customreader( Fname );
+             %
+             % Input Arguments:
+             %
+             % Ds        --> Datastore
+             % Fname     --> Current file name
+             %--------------------------------------------------------------
+             [ Fid, Msg ] = fopen( Fname, "r" );
+             %--------------------------------------------------------------
+             % Check for an open error and print the msg
+             %--------------------------------------------------------------
+             assert( ( Fid ~= -1 ), Msg );
+             %--------------------------------------------------------------
+             % Fetch the data signal names
+             %--------------------------------------------------------------
+             Signals = obj.getSignals( Fid );
+             %--------------------------------------------------------------
+             % Fetch the signal units
+             %--------------------------------------------------------------
+             Units = obj.getUnits( Fid );
+             %--------------------------------------------------------------
+             % Find the start of the data block
+             %--------------------------------------------------------------
+             N = obj.numberOfHeaderLines( Fid );
+             %--------------------------------------------------------------
+             % Find the end of the file & generate a range vector
+             %--------------------------------------------------------------
+             [ LastRow, LastCol ] = obj.findLast( Fname, 1 );
+             LastCol = string( char( 65 + LastCol - 1 ) );
+             XLrange = strjoin( [ "$A", N + 3 ], "$" );
+             XLrange = strjoin( [ XLrange, ":" ], "" );
+             XLrange = strjoin( [ XLrange, "$", LastCol ], "" );
+             XLrange = strjoin( [ XLrange, LastRow ], "$" );
+             %--------------------------------------------------------------
+             % Read in the data as a table
+             %--------------------------------------------------------------
+             [ ~, ~, T ] = xlsread( Fname, 1, XLrange );
+             T = cell2table( T );
+             T.Properties.VariableNames = Signals;
+             T.Properties.VariableUnits = Units;
+         end % customreader
+     end % protected methods
+     
+     methods ( Access = private )
+         function T = invertCapacity( obj, T )
+             %--------------------------------------------------------------
+             % Make sure capacity measures are positive
+             %
+             % T = obj.invertDischargeCurrent( T );
+             %
+             % Input Arguments:
+             %
+             % T     --> Data table for the current file
+             %--------------------------------------------------------------
+             T.( obj.Capacity_ ) = abs( T.( obj.Capacity_ ) );
+         end % invertCapacity
+     end % private methods
+     
+     methods ( Static = true, Access = protected )
+         function N = numberOfHeaderLines( Fid, SearchString )
+             %--------------------------------------------------------------
+             % Return the number of header lines
+             %
+             % N = obj.numberOfHeaderLines( Fid, SearchString );
+             %
+             % Input Arguments:
+             %
+             % Fid           --> handle to current file
+             % SearchString  --> String to search for. This marks the end of
+             %                   the header lines {"Step"}
+             %--------------------------------------------------------------
+             if ( nargin < 2 )
+                 SearchString = "Step";                                      % Apply default
+             end
+             frewind( Fid );                                                 % Rewind the file to the begiining
+             StopFlg = false;
+             N = 0;
+             while ~StopFlg
+                 CurLine = fgetl( Fid );
+                 N = N + 1;
+                 StopFlg = contains( CurLine, SearchString );
+             end
+         end
+         
+         function SerialNumber = getSerialNumber( Fname )
+             %--------------------------------------------------------------
+             % Parse the battery serial number information
+             %
+             % SerialNumber = obj.getSerialNumber( Fname );
+             %
+             % Input Arguments:
+             %
+             % Fname   --> (string) name to file
+             %--------------------------------------------------------------
+             SerialNumber = string( extractBetween( Fname, "Cell", "_MSM" ) );
+         end % getSerialNumber
+         
+         function U = getUnits( Fid )
+             %--------------------------------------------------------------
+             % Return the units string
+             %
+             % U = obj.c( Fid );
+             %
+             % Input Arguments:
+             %
+             % Fid   --> handle to current file
+             %--------------------------------------------------------------
+             CurLine = fgetl( Fid );
+             %--------------------------------------------------------------
+             % Return the signal names
+             %--------------------------------------------------------------
+             Idx = strfind(CurLine,",");
+             CurLine = CurLine( 1:( Idx( end ) - 1 ) );
+             N = numel( Idx );
+             U = string.empty( 0, N );
+             for Q = 1:N
+                 if Q == 1
+                     Start = 1;
+                 else
+                     Start = Idx( Q - 1 ) + 1;
+                 end
+                 Finish = Idx( Q ) - 1;
+                 U( Q ) = string( CurLine( Start:Finish ) );
+             end
+         end % getUnits
+         
+         function Signals = getSignals( Fid )
+             %--------------------------------------------------------------
+             % Locate the start of the data block and return the list of
+             % signals.
+             %
+             % obj.getSignals( Fid );
+             %
+             % Input Arguments:
+             %
+             % Fid   --> handle to current file
+             %
+             % Output Arguments:
+             %
+             % Signals   --> (string) list of data signals in the file
+             %--------------------------------------------------------------
+             StopFlg = false;
+             Str = "Step";                                                   % Termination string
+             while ~StopFlg
+                 CurLine = fgetl( Fid );
+                 StopFlg = contains( CurLine, Str );
+             end
+             %--------------------------------------------------------------
+             % Return the signal names
+             %--------------------------------------------------------------
+             Idx = strfind(CurLine,",");
+             CurLine = CurLine( 1:( Idx( end ) - 1 ) );
+             N = numel( Idx );
+             Signals = string.empty( 0, N );
+             for Q = 1:N
+                 if Q == 1
+                     Start = 1;
+                 else
+                     Start = Idx( Q - 1 ) + 1;
+                 end
+                 Finish = Idx( Q ) - 1;
+                 Signals( Q ) = string( CurLine( Start:Finish ) );
+             end
+         end % getSignals
         
-        function T = customreader( obj, Fname )
+        function Name = parseChannelName( Channel )
             %--------------------------------------------------------------
-            % Custom reader file for Warwick pulse test data and return a
-            % table of data
+            % Remove spaces and parentheses
             %
-            % T = obj.customreader( Fname );
-            %
-            % Input Arguments:
-            %
-            % Ds        --> Datastore
-            % Fname     --> Current file name
-            %--------------------------------------------------------------
-            [ Fid, Msg ] = fopen( Fname, "r" );
-            %--------------------------------------------------------------
-            % Check for an open error and print the msg
-            %--------------------------------------------------------------
-            assert( ( Fid ~= -1 ), Msg );
-            %--------------------------------------------------------------
-            % Fetch the data signal names
-            %--------------------------------------------------------------
-            Signals = obj.getSignals( Fid );
-            %--------------------------------------------------------------
-            % Fetch the signal units
-            %--------------------------------------------------------------
-            Units = obj.getUnits( Fid );
-            %--------------------------------------------------------------
-            % Find the start of the data block
-            %--------------------------------------------------------------
-            N = obj.numberOfHeaderLines( Fid );
-            %--------------------------------------------------------------
-            % Find the end of the file & generate a range vector
-            %--------------------------------------------------------------
-            [ LastRow, LastCol ] = obj.findLast( Fname, 1 );
-            LastCol = string( char( 65 + LastCol - 1 ) );
-            XLrange = strjoin( [ "$A", N + 3 ], "$" );
-            XLrange = strjoin( [ XLrange, ":" ], "" );
-            XLrange = strjoin( [ XLrange, "$", LastCol ], "" );
-            XLrange = strjoin( [ XLrange, LastRow ], "$" );
-            %--------------------------------------------------------------
-            % Read in the data as a table
-            %--------------------------------------------------------------
-            [ ~, ~, T ] = xlsread( Fname, 1, XLrange );
-            T = cell2table( T );
-            T.Properties.VariableNames = Signals;
-            T.Properties.VariableUnits = Units;
-        end % customreader    
-    end % protected methods
-    
-    methods ( Access = private )
-        function T = invertCapacity( obj, T )
-            %--------------------------------------------------------------
-            % Make sure capacity measures are positive
-            %
-            % T = obj.invertDischargeCurrent( T );
+            % Name = obj.parseChannelname( Channel );
             %
             % Input Arguments:
             %
-            % T     --> Data table for the current file
+            % Channel   --> (string) Name of channel to parse
             %--------------------------------------------------------------
-            T.( obj.Capacity_ ) = abs( T.( obj.Capacity_ ) );
-        end % invertCapacity
-    end % private methods
-    
-    methods ( Static = true, Access = protected )    
-        function N = numberOfHeaderLines( Fid, SearchString )
-            %--------------------------------------------------------------
-            % Return the number of header lines
-            %
-            % N = obj.numberOfHeaderLines( Fid, SearchString );
-            %
-            % Input Arguments:
-            %
-            % Fid           --> handle to current file
-            % SearchString  --> String to search for. This marks the end of
-            %                   the header lines {"Step"}
-            %--------------------------------------------------------------
-            if ( nargin < 2 )
-                SearchString = "Step";                                      % Apply default
-            end
-            frewind( Fid );                                                 % Rewind the file to the begiining
-            StopFlg = false;
-            N = 0;
-            while ~StopFlg
-                CurLine = fgetl( Fid );
-                N = N + 1;
-                StopFlg = contains( CurLine, SearchString );
-            end
-        end
-        
-        function SerialNumber = getSerialNumber( Fname )
-            %--------------------------------------------------------------
-            % Parse the battery serial number information
-            %
-            % SerialNumber = obj.getSerialNumber( Fname );
-            %
-            % Input Arguments:
-            %
-            % Fname   --> (string) name to file
-            %--------------------------------------------------------------
-            SerialNumber = string( extractBetween( Fname, "Cell", "_MSM" ) );
-        end % getSerialNumber        
-        
-        function U = getUnits( Fid )
-            %--------------------------------------------------------------
-            % Return the units string
-            %
-            % U = obj.c( Fid );
-            %
-            % Input Arguments:
-            %
-            % Fid   --> handle to current file
-            %--------------------------------------------------------------
-            CurLine = fgetl( Fid );
-            %--------------------------------------------------------------
-            % Return the signal names
-            %--------------------------------------------------------------
-            Idx = strfind(CurLine,",");
-            CurLine = CurLine( 1:( Idx( end ) - 1 ) );
-            N = numel( Idx );
-            U = string.empty( 0, N );
-            for Q = 1:N
-                if Q == 1
-                    Start = 1;
-                else
-                    Start = Idx( Q - 1 ) + 1;
-                end
-                Finish = Idx( Q ) - 1;
-                U( Q ) = string( CurLine( Start:Finish ) );
-            end
-        end % getUnits
-        
-        function Signals = getSignals( Fid )
-            %--------------------------------------------------------------
-            % Locate the start of the data block and return the list of
-            % signals.
-            %
-            % obj.getSignals( Fid );
-            %
-            % Input Arguments:
-            %
-            % Fid   --> handle to current file
-            %
-            % Output Arguments:
-            %
-            % Signals   --> (string) list of data signals in the file
-            %--------------------------------------------------------------
-            StopFlg = false;
-            Str = "Step";                                                   % Termination string
-            while ~StopFlg
-                CurLine = fgetl( Fid );
-                StopFlg = contains( CurLine, Str );
-            end
-            %--------------------------------------------------------------
-            % Return the signal names
-            %--------------------------------------------------------------
-            Idx = strfind(CurLine,",");
-            CurLine = CurLine( 1:( Idx( end ) - 1 ) );
-            N = numel( Idx );
-            Signals = string.empty( 0, N );
-            for Q = 1:N
-                if Q == 1
-                    Start = 1;
-                else
-                    Start = Idx( Q - 1 ) + 1;
-                end
-                Finish = Idx( Q ) - 1;
-                Signals( Q ) = string( CurLine( Start:Finish ) );
-            end
-        end % getSignals
-    end % Static & protected methods
-    
-    methods ( Static = true, Hidden = true )
-        function T = makeIndexTable( Fname )
-            %--------------------------------------------------------------
-            % Generate the index table necessary for assigning the settings
-            % to the data
-            %
-            % T = obj.makeIndexTable( Fname );
-            % 
-            % Input Arguments:
-            %
-            % Fname     --> Full file specification for index file
-            %--------------------------------------------------------------
-            [ ~, ~, T ] = xlsread( Fname, 1 );
-            Vars = string( T( 1, : ) );
-            %--------------------------------------------------------------
-            % Use standard names
-            %--------------------------------------------------------------
-            Idx = strcmpi( "C_rate", Vars );
-            Vars( Idx ) = "CRate";
-            Idx = strcmpi( "CellNumber", Vars );
-            Vars( Idx ) = "SerialNumber";
-            T = T( 2:end, : );
-            T = cell2table( T );
-            T.Properties.VariableNames = Vars;
-        end % makeIndexTable
-    end % Static & hidden methods
+            Name = replace( Channel, "(", "_" );
+            Name = replace( Name, ")", "_" );
+            Name = replace( Name, "-", "" );
+        end % parseChannelName         
+     end % Static & protected methods
+     
+     methods ( Static = true, Hidden = true )
+         function T = makeIndexTable( Fname )
+             %--------------------------------------------------------------
+             % Generate the index table necessary for assigning the settings
+             % to the data
+             %
+             % T = obj.makeIndexTable( Fname );
+             %
+             % Input Arguments:
+             %
+             % Fname     --> Full file specification for index file
+             %--------------------------------------------------------------
+             [ ~, ~, T ] = xlsread( Fname, 1 );
+             Vars = string( T( 1, : ) );
+             %--------------------------------------------------------------
+             % Use standard names
+             %--------------------------------------------------------------
+             Idx = strcmpi( "C_rate", Vars );
+             Vars( Idx ) = "CRate";
+             Idx = strcmpi( "CellNumber", Vars );
+             Vars( Idx ) = "SerialNumber";
+             T = T( 2:end, : );
+             T = cell2table( T );
+             T.Properties.VariableNames = Vars;
+         end % makeIndexTable
+     end % Static & hidden methods
 end % warwickRateTestData

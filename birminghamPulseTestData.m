@@ -14,6 +14,9 @@ classdef birminghamPulseTestData < pulseTestDataImporter
         State                 string                = "State"               % Channel indicating cell states
         Voltage               string                = "Volts"               % Name of voltage channel
         DischgCurrent         double                = -1.667                % Discharge current 
+        PulseTime             double                = 10                    % Required pulse time [s]
+        Time                  string                = "TestTime"            % Name of time channel
+        CF                    double                = 1                     % Time signal to seconds c.f.
     end % protected properties    
     
     methods

@@ -13,6 +13,9 @@ classdef (Abstract = true ) pulseTestDataImporter
         Voltage               string                                        % Name of voltage channel
         Capacity              string                                        % Name of capacity channel
         DischgCurrent         double                                        % Discharge current 
+        PulseTime             double                                        % Required pulse time [s]
+        Time                  string                                        % Name of time channel
+        CF                    double                                        % Conversion factor from hours to seconds
     end % Abstract & protected properties    
     
     properties ( Constant = true, Abstract = true )
@@ -29,6 +32,7 @@ classdef (Abstract = true ) pulseTestDataImporter
         Current_              string
         Voltage_              string
         Capacity_             string
+        Time_                 string
     end    
     
     methods ( Abstract = true )
@@ -37,6 +41,72 @@ classdef (Abstract = true ) pulseTestDataImporter
     end % Abstract methods signatures
     
     methods
+        function obj = setTime2SecsCF( obj, CF )
+            %--------------------------------------------------------------
+            % Set the conversion factor for the time channel --> [s]. E.g.
+            % if the time channel is in hours, set the CF property to 3600.
+            %
+            % obj = obj.setTime2SecsCF( CF );
+            %
+            % Input Arguments:
+            %
+            % CF    --> (double) conversion factor
+            %--------------------------------------------------------------
+            arguments
+                obj (1,1)
+                CF  (1,1) { mustBePositive( CF ), mustBeNonempty( CF ) }
+            end
+            obj.CF = CF;
+        end % setTime2SecsCF
+        
+        function obj = setPulseTime( obj, T )
+            %--------------------------------------------------------------
+            % Set the pulse time
+            %
+            % obj = obj.setPulseTime( T );
+            %
+            % Input Arguments:
+            %
+            % T     --> (double) pulse time [s] {10}
+            %--------------------------------------------------------------
+            arguments
+                obj (1,1)
+                T   (1,1)   double  { mustBePositive( T ) } = 10;
+            end
+            obj.PulseTime = T;
+        end % setPulseTime
+        
+        function plotIR( obj )
+            %--------------------------------------------------------------
+            % Plot the discharge and charge IR data on a two-axis basis
+            %
+            % obj.plotIR();
+            %--------------------------------------------------------------
+            figure;
+            yyaxis left;
+            H = plot( obj.Data.SoC, obj.Data.DischargeIR, 'o');
+            H.MarkerEdgeColor = H.Color;
+            H.MarkerFaceColor = H.MarkerEdgeColor;
+            ylim( [ 0, 0.1 ] );
+            xlabel( "SoC [%]" );
+            ylabel( "Discharge IR [\Omega]" );
+            yyaxis right;
+            H = plot( obj.Data.SoC, obj.Data.ChargeIR, 's');
+            H.MarkerEdgeColor = H.Color;
+            H.MarkerFaceColor = H.MarkerEdgeColor;
+            ylim( [ 0, 0.1 ] );
+            ylabel( "Charge IR [\Omega]" );
+            grid on;
+            %--------------------------------------------------------------
+            % Turn on the grid
+            %--------------------------------------------------------------
+            Ax = gca;
+            Ax.GridAlpha = 0.75;
+            Ax.GridColor = [0.025 0.025 0.025];
+            Ax.GridLineStyle = "--";
+            title( string( obj.Facility ), 'FontSize', 18 );
+        end % plot
+        
         function obj = setBattery( obj, BatteryId )
             %--------------------------------------------------------------
             % Set the battery name
@@ -203,6 +273,11 @@ classdef (Abstract = true ) pulseTestDataImporter
             % Return parsed current channel
             C = obj.parseChannelName( obj.Voltage );
         end
+        
+        function C = get.Time_( obj )
+            % Return parsed current channel
+            C = obj.parseChannelName( obj.Time );
+        end
     end % GET/SET Methods
     
     methods ( Access = protected )
@@ -232,14 +307,18 @@ classdef (Abstract = true ) pulseTestDataImporter
             %--------------------------------------------------------------
             Vname = obj.Voltage_;
             Iname = obj.Current_;
+            Tname = obj.Time_;
             I = T.( Iname );
             V = T.( Vname );
+            Tm = T.( Tname );
             BI = max( abs( [ min( I ), max( I ) ] ) );
             AI = - BI;
             BV = max( abs( [ min( V ), max( V ) ] ) );
             AV = -BV;
             Ic = obj.codeData( I, AI, BI );
             Vc = obj.codeData( V, AV, BV );
+            D_Ok = false( N, 1 );
+            C_Ok = D_Ok;
             for Q=1:N
                 %----------------------------------------------------------
                 % Calculate the internal resistance values
@@ -254,26 +333,29 @@ classdef (Abstract = true ) pulseTestDataImporter
                 %----------------------------------------------------------
                 % Find the discharge & charge pulse event locations
                 %----------------------------------------------------------
-                [ Dstart, Dfinish, DLag ] = obj.locateDischgPulse( I, V );
-                [ Cstart, Cfinish, CLag ] = obj.locateChgPulse( I, V );
+                [ Dstart, Dfinish ] = obj.locateDischgPulse( I );
+                [ ~, D_Ok( Q ) ] = obj.getPulseWidth( Tm( Tidx ), Dstart, Dfinish );
+                [ Cstart, Cfinish ] = obj.locateChgPulse( I );
+                [ ~, C_Ok( Q ) ] = obj.getPulseWidth( Tm( Tidx ), Cstart, Cfinish );
                 %----------------------------------------------------------
                 % Discharge value
                 %----------------------------------------------------------
-                D_DV( Q ) = abs( ( V( Dstart + DLag ) - V( Dfinish + DLag )...
-                                                                       ) );
-                D_DI( Q ) = min( I );
+                D_DV( Q ) = abs( ( V( Dstart ) - V( Dfinish ) ) );
+                D_DI( Q ) = median( I( Dstart:Dfinish ) );
                 %----------------------------------------------------------
                 % Charge value
                 %----------------------------------------------------------
-                C_DV( Q ) = abs( ( V( Cfinish ) - V( Cstart - 1 - CLag ) ) );
-                C_DI( Q ) = max( I );
+                C_DV( Q ) = abs( ( V( Cfinish ) - V( Cstart ) ) );
+                C_DI( Q ) = median( I( Cstart:Cfinish ) );
             end
             D_DV = obj.decodeData( D_DV, AV, BV );
             D_DI = abs( obj.decodeData( D_DI, AI, BI ) );
             D_IR =  D_DV ./ D_DI;
+            D_IR( ~D_Ok ) = NaN;
             C_DV = obj.decodeData( C_DV, AV, BV );
             C_DI = abs( obj.decodeData( C_DI, AI, BI ) );
-            C_IR =  C_DV ./ C_DI;        
+            C_IR =  C_DV ./ C_DI;    
+            C_IR( ~C_Ok ) = NaN;
         end % calcIR
         
         function [ SoC, MaxCap ] = calcSoC( obj, T, Start, Finish )
@@ -476,7 +558,7 @@ classdef (Abstract = true ) pulseTestDataImporter
             [LastRow, LastCol ] = findLastRow( ExcelFile, SheetName );
         end % findLastRow
         
-        function [ Start, Finish, Lag ] = locateDischgPulse( I, V )
+        function [ Start, Finish ] = locateDischgPulse( I )
             %--------------------------------------------------------------
             % Locate the short discharge pulse event locations
             %
@@ -485,13 +567,11 @@ classdef (Abstract = true ) pulseTestDataImporter
             % Input Arguments:
             %
             % I     --> Current trace
-            % V     --> Voltage trace
             %
             % Output Arguments:
             % 
             % Start     --> Starting index for discharge pulse
             % Finish    --> Finishing index for discharge pulse
-            % Lag       --> Offset to corresponding voltage events
             %--------------------------------------------------------------
             I( I > 0 ) = 0;
             S = sign( I );
@@ -500,34 +580,22 @@ classdef (Abstract = true ) pulseTestDataImporter
             Start = Start + 1;
             Finish = find( S > 0, 1, 'first' );
             Finish = Finish + 1;
-            %--------------------------------------------------------------
-            % Now find the initial lag estimate based on the position of 
-            % the voltage pulse
-            %--------------------------------------------------------------
-            S = diff( round( V, 2 ) );
-            Vstart = find( S < 0, 1, 'first' );
-            %--------------------------------------------------------------
-            % Now tune the lag estimate for the start of the voltage pulse
-            %--------------------------------------------------------------
-            Lag = Vstart - Start;
         end % locateDischgPulse
         
-        function [ Start, Finish, Lag ] = locateChgPulse( I, V )
+        function [ Start, Finish ] = locateChgPulse( I )
             %--------------------------------------------------------------
             % Locate the short charge pulse event locations
             %
-            % [ Start, Finish, Lag ] = obj.locateChgPulse( I, V );
+            % [ Start, Finish ] = obj.locateChgPulse( I );
             %
             % Input Arguments:
             %
             % I     --> Current trace
-            % V     --> Voltage trace
             %
             % Output Arguments:
             % 
-            % Start     --> Starting index for discharge pulse
-            % Finish    --> Finishing index for discharge pulse
-            % Lag       --> Offset to corresponding voltage events
+            % Start     --> Starting index for charge pulse
+            % Finish    --> Finishing index for charge pulse
             %--------------------------------------------------------------
             I( I < 0 ) = 0;
             I = diff( I );
@@ -535,12 +603,30 @@ classdef (Abstract = true ) pulseTestDataImporter
             Start = Start + 1;
             Finish = find( I < 0, 1, 'last' );
             Finish = Finish + 1;
-            %--------------------------------------------------------------
-            % Now find the lag based on the position of the minimum voltage
-            % value
-            %--------------------------------------------------------------
-            [ ~, VmnLoc ] = max( V );
-            Lag = VmnLoc - Finish;
         end % locateChgPulse        
     end % protected static methods
+    
+    methods ( Access = private )
+        function  [ Dt, Ok ] = getPulseWidth( obj, Tm, Start, Finish)
+            %--------------------------------------------------------------
+            % Calculate the width of the pulse
+            %
+            % Dt = obj.getPulseWidth( Tm, Start, Finish);
+            %
+            % Input Arguments:
+            %
+            % Tm        --> Time vector [s]
+            % Start     --> Starting index for pulse
+            % Finish    --> Finishing index for pulse
+            %
+            % Output Arguments:
+            %
+            % Dt        --> Width of applied pulse [s]
+            % Ok        --> (logical) true if Dt >= obj.PulseTime
+            %--------------------------------------------------------------
+            Dt = Tm( Start:Finish );
+            Dt = round( obj.CF * ( max( Dt ) - min( Dt ) ) );
+            Ok = ( Dt >= obj.PulseTime );
+        end % getPulseWidth
+    end % private methods
 end % pulseTestDataImporter

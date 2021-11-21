@@ -7,6 +7,9 @@ classdef imperialPulseTestData < pulseTestDataImporter
         Capacity              string                = "Capacity_mAh"        % Name of capacity channel
         Voltage               string                = "Ecell_V"             % Name of voltage channel
         DischgCurrent         double                = -1.67e3               % Discharge current 
+        PulseTime             double                = 10                    % Required pulse time [s]
+        Time                  string                = "time_s"              % Name of time channel
+        CF                    double                = 1                     % Time signal to seconds c.f.
     end % protected properties 
     
     properties ( Constant = true )

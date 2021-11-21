@@ -12,7 +12,10 @@ classdef lancasterPulseTestData < pulseTestDataImporter
         Current               string                = "Current (A)"         % Name of current channel
         Voltage               string                = "Potential (V)"       % Name of voltage channel
         Capacity              string                = "Capacity (Ah)"       % Name of capacity channel
-        DischgCurrent         double          = -1.67                       % Discharge current 
+        DischgCurrent         double                = -1.67                 % Discharge current 
+        PulseTime             double                = 10                    % Required pulse time [s]
+        Time                  string                = "Run Time (h)"        % Name of time channel
+        CF                    double                = 3600                  % Time signal to seconds c.f.
     end % protected properties
     
     methods
