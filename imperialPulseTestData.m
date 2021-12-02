@@ -111,6 +111,8 @@ classdef imperialPulseTestData < pulseTestDataImporter
                 %----------------------------------------------------------
                 [ DischargeIR, ChargeIR, DV, DI, CV, CI ] = obj.calcIR( T.data,...
                     Start, Finish );
+                DischargeIR = obj.iRisNanOrZero( DischargeIR );
+                ChargeIR = obj.iRisNanOrZero( ChargeIR );
                 %----------------------------------------------------------
                 % Correct the units
                 %----------------------------------------------------------

@@ -603,7 +603,22 @@ classdef (Abstract = true ) pulseTestDataImporter
             Start = Start + 1;
             Finish = find( I < 0, 1, 'last' );
             Finish = Finish + 1;
-        end % locateChgPulse        
+        end % locateChgPulse  
+        
+        function Ir = iRisNanOrZero( Ir )
+            %--------------------------------------------------------------
+            % If IR id infinity or less than or equal to zero replace with 
+            % NaN
+            %
+            % Ir = obj.iRisNanOrZero( Ir )
+            %
+            % Input Arguments:
+            %
+            % Ir    --> (double) Internal resitance vector
+            %--------------------------------------------------------------
+            Ir( isinf( Ir ) ) = NaN;
+            Ir( ( Ir <= 0 ) ) = NaN;
+        end % iRisNanOrZero
     end % protected static methods
     
     methods ( Access = private )

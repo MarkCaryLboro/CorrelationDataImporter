@@ -1,4 +1,4 @@
-classdef warwickRateTestData < pulseTestDataImporter
+classdef warwickRateTestData < rateTestDataImporter
     % Concrete rate test data interface for facility correlation analysis
     % for Warwick data    
     

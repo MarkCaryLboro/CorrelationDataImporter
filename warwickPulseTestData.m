@@ -109,6 +109,8 @@ classdef warwickPulseTestData < pulseTestDataImporter
                 %----------------------------------------------------------
                 [ DischargeIR, ChargeIR, DV, DI, CV, CI ] = obj.calcIR( T,...
                     Start, Finish );
+                DischargeIR = obj.iRisNanOrZero( DischargeIR );
+                ChargeIR = obj.iRisNanOrZero( ChargeIR );
                 %----------------------------------------------------------
                 % Write the current data to a summary data and append it
                 % to the data table
