@@ -11,6 +11,11 @@ classdef lancasterPulseTestData < pulseTestDataImporter
     properties ( SetAccess = protected )
         Current               string                = "Current (A)"         % Name of current channel
         Voltage               string                = "Potential (V)"       % Name of voltage channel
+        Capacity              string                = "Capacity (Ah)"       % Name of capacity channel
+        DischgCurrent         double                = -1.67                 % Discharge current 
+        PulseTime             double                = 10                    % Required pulse time [s]
+        Time                  string                = "Run Time (h)"        % Name of time channel
+        CF                    double                = 3600                  % Time signal to seconds c.f.
     end % protected properties
     
     methods
@@ -82,27 +87,32 @@ classdef lancasterPulseTestData < pulseTestDataImporter
                 %----------------------------------------------------------
                 T = obj.readDs();
                 %----------------------------------------------------------
-                % Calculate number and location of the discharge events
+                % Calculate number and location of the pulses
                 %----------------------------------------------------------
-                NumCyc = obj.numCycles( T, obj.Current_ );
                 [ Start, Finish ] = obj.locEvents( T, obj.Current_ );
-                Cycle = ( 1:NumCyc ).';
+                NumCyc = numel( Start );
                 %----------------------------------------------------------
-                % Calculate the discharge capacity
+                % Calculate the state of charge
                 %----------------------------------------------------------
-                DischargeCapacity = T{ Start, obj.Capacity_ } -....
-                                    T{ Finish, obj.Capacity_ };
+                SoC = obj.calcSoC( T, Start, Finish );
                 %----------------------------------------------------------
-                % Write the curreent data to a summary data and append it 
+                % Calculate the discharge internal resistance values
+                %----------------------------------------------------------
+                [ DischargeIR, ChargeIR, DV, DI, CV, CI ] = obj.calcIR( T,...
+                                                           Start, Finish );
+                DischargeIR = obj.iRisNanOrZero( DischargeIR );
+                ChargeIR = obj.iRisNanOrZero( ChargeIR );
+                %----------------------------------------------------------
+                % Write the current data to a summary data and append it 
                 % to the data table
                 %----------------------------------------------------------
                 SerialNumber = repmat( SerialNumber, NumCyc, 1 );
                 Temperature = repmat( Temperature, NumCyc, 1 );
-                CRate = repmat( CRate, NumCyc, 1 );
                 Facility = string( repmat( obj.Facility, NumCyc, 1 ) );     %#ok<PROP>
                 BatteryName = repmat( obj.Battery, NumCyc, 1 );
-                T = table( BatteryName, SerialNumber, CRate, Cycle,...
-                           Facility, Temperature, DischargeCapacity );      %#ok<PROP>
+                T = table( BatteryName, SerialNumber, Facility,...
+                           Temperature, SoC, DischargeIR, ChargeIR, DV, DI,...
+                           CV, CI );                                        %#ok<PROP>
                 if isempty( obj.Data )
                     obj.Data = T;
                 else
@@ -112,13 +122,61 @@ classdef lancasterPulseTestData < pulseTestDataImporter
             %--------------------------------------------------------------
             % Define the units
             %--------------------------------------------------------------
-            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA",...
-                            "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
+            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA", "NA",...
+                            "[Deg C]", "[%]", "[Ohms]", "[Ohms]" , "[V]", "[A]",...
+                            "[V]", "[A]" ] );
             close( W );
         end % extractData
+        
+        function obj = setDischgCurrent( obj, Dc )
+            %--------------------------------------------------------------
+            % Set the value of the discharge current
+            %
+            % obj = obj.setDischgCurrent( Dc );
+            %
+            % Input Arguments:
+            %
+            % Dc    --> Discharge current [A]
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)   lancasterPulseTestData
+                Dc      (1,1)   double                  { mustBeNegative( Dc ) } = -1.67
+            end
+            obj.DischgCurrent = Dc;
+        end % setDischgCurrent
     end % ordinary & constructor methods
     
     methods ( Access = protected )
+        function [ SoC, MaxCap ] = calcSoC( obj, T, Start, Finish )
+            %--------------------------------------------------------------
+            % Calculate the event state of charge
+            %
+            % Soc = obj.calcSoC( T, Start, Finish );
+            %
+            % Input Arguments:
+            %
+            % T         --> (table) data table
+            % Start     --> (double) start of discharge events
+            % Finish    --> (double) finish of discharge events
+            %
+            % Output Arguments:
+            %
+            % SoC       --> (double) State of charge vector
+            % MaxCap    --> (double) Maximum observed capacity of the cell
+            %--------------------------------------------------------------
+            N = numel( Start );                                             % Number of cycles
+            C = T.( obj.Capacity_ );                                        % Capacity data
+            MaxCap = max( C );                                              % Maximum capacity
+            SoC = zeros( N, 1 );                                            % Define storage
+            for Q = 1:N
+                %----------------------------------------------------------
+                % Calculate the SoC
+                %----------------------------------------------------------
+                S = min( C( ( Start( Q ) ):Finish( Q ) ) );
+                SoC( Q ) = S / MaxCap;
+            end
+        end % calcSoC        
+        
         function T = getTemperature( obj, Q, Str )  
             %--------------------------------------------------------------
             % Parse the ageing temperature
@@ -213,27 +271,5 @@ classdef lancasterPulseTestData < pulseTestDataImporter
     end % private methods
     
     methods ( Static = true, Access = protected )
-        
-        function N = numCycles( T, EventChannel )
-            %--------------------------------------------------------------
-            % Return number of cycles
-            %
-            % N = obj.numCycles( T, EventChannel );
-            %
-            % Input Arguments:
-            %
-            % T             --> (table) data table
-            % EventChannel  --> (string) Name of channel defining event
-            %
-            % Output Arguments:
-            %
-            % N             --> Number of cycles
-            %--------------------------------------------------------------
-            [ S, IA, IS ] = uniquetol( T.( EventChannel ), 0.01 );
-%             S = sign( T.( EventChannel ) );
-%             S( S > 0 ) = 0;
-%             S = diff( S );
-%             N = sum( S < 0 );
-        end % numCycles    
     end % static and protected methods
 end % lancasterPulseTestData

@@ -1,7 +1,6 @@
-classdef birminghamRateTestData < rateTestDataImporter
-    % Concrete rate test data interface for facility correlation analysis
+classdef birminghamPulseTestData < pulseTestDataImporter
+    % Concrete pulse test data interface for facility correlation analysis
     % for Birmingham data    
-    
     
     properties ( Constant = true )
         Fileformat            string                = ".mat"                % Supported input formats
@@ -13,10 +12,15 @@ classdef birminghamRateTestData < rateTestDataImporter
         Current               string                = "Amps"                % Name of current channel
         Capacity              string                = "Amp_hr"              % Name of capacity channel
         State                 string                = "State"               % Channel indicating cell states
-    end % protected properties
-        
+        Voltage               string                = "Volts"               % Name of voltage channel
+        DischgCurrent         double                = -1.667                % Discharge current 
+        PulseTime             double                = 10                    % Required pulse time [s]
+        Time                  string                = "TestTime"            % Name of time channel
+        CF                    double                = 1                     % Time signal to seconds c.f.
+    end % protected properties    
+    
     methods
-        function obj = birminghamRateTestData( BatteryId, RootDir )
+        function obj = birminghamPulseTestData( BatteryId, RootDir )
             %--------------------------------------------------------------
             % birminghamRateTestData constructor. Imports correlation rate
             % test data and converts it to standard format
@@ -50,7 +54,7 @@ classdef birminghamRateTestData < rateTestDataImporter
                 ReadFunc );
             obj.Signals = obj.readSignals();
             warning on;
-        end % birminghamRateTestData
+        end % birminghamPulseTestData
         
         function obj = setState( obj, Name )
             %--------------------------------------------------------------
@@ -74,7 +78,7 @@ classdef birminghamRateTestData < rateTestDataImporter
                 warning('Cannot set "State". Signal "%s" not in the signals list',...
                         Name);
             end
-        end
+        end % setState
         
         function obj = extractData( obj )
             %--------------------------------------------------------------
@@ -110,7 +114,6 @@ classdef birminghamRateTestData < rateTestDataImporter
                 % Capture metadata
                 %----------------------------------------------------------
                 SerialNumber = obj.getSerialNumber( Q );
-                CRate = obj.getCRate( Q );
                 try
                     %------------------------------------------------------
                     % Try to capture temperature data from data table
@@ -125,26 +128,38 @@ classdef birminghamRateTestData < rateTestDataImporter
                 %----------------------------------------------------------
                 % Calculate number and location of the discharge events
                 %----------------------------------------------------------
-                NumCyc = obj.numCycles( T, obj.State );
                 T = obj.invertDischargeCurrent( T );
                 [ Start, Finish ] = obj.locEvents( T, obj.Current_ );
-                Cycle = ( 1:NumCyc ).';
                 %----------------------------------------------------------
-                % Calculate the discharge capacity
+                % Remove the last pulse which is not required
                 %----------------------------------------------------------
-                DischargeCapacity = ( T.( obj.Capacity_ )( Finish - 1 ) -....
-                    T.( obj.Capacity_ )( Start ) );
+                Start = Start( 1:( end - 1 ) );
+                Finish = Finish( 1:( end - 1 ) );
+                NumCyc = numel( Start );
                 %----------------------------------------------------------
-                % Write the curreent data to a summary data and append it
+                % Calculate the state of charge
+                %----------------------------------------------------------
+                SoC = obj.calcSoC( T, Start, Finish );
+                SoC = cumsum( SoC );
+                SoC = 1 - SoC;
+                %----------------------------------------------------------
+                % Calculate the discharge internal resistance values
+                %----------------------------------------------------------
+                [ DischargeIR, ChargeIR, DV, DI, CV, CI ] = obj.calcIR( T,...
+                    Start, Finish );
+                DischargeIR = obj.iRisNanOrZero( DischargeIR );
+                ChargeIR = obj.iRisNanOrZero( ChargeIR );
+                %----------------------------------------------------------
+                % Write the current data to a summary data and append it
                 % to the data table
                 %----------------------------------------------------------
                 SerialNumber = repmat( SerialNumber, NumCyc, 1 );
                 Temperature = repmat( Temperature, NumCyc, 1 );
-                CRate = repmat( CRate, NumCyc, 1 );
                 Facility = string( repmat( obj.Facility, NumCyc, 1 ) );     %#ok<PROP>
                 BatteryName = repmat( obj.Battery, NumCyc, 1 );
-                T = table( BatteryName, SerialNumber, CRate, Cycle,...
-                    Facility, Temperature, DischargeCapacity );             %#ok<PROP>
+                T = table( BatteryName, SerialNumber, Facility,...
+                    Temperature, SoC, DischargeIR, ChargeIR, DV, DI,...
+                    CV, CI );                                               %#ok<PROP>
                 if isempty( obj.Data )
                     obj.Data = T;
                 else
@@ -154,13 +169,31 @@ classdef birminghamRateTestData < rateTestDataImporter
             %--------------------------------------------------------------
             % Define the units
             %--------------------------------------------------------------
-            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA",...
-                "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
+            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA", "NA",...
+                "[Deg C]", "[%]", "[Ohms]", "[Ohms]" , "[V]",...
+                "[A]", "[V]", "[A]" ] );
             close( W );
         end % extractData
-    end % constructor and ordinary methods
+        
+        function obj = setDischgCurrent( obj, Dc )
+            %--------------------------------------------------------------
+            % Set the value of the discharge current in [mA]
+            %
+            % obj = obj.setDischgCurrent( Dc );
+            %
+            % Input Arguments:
+            %
+            % Dc    --> Discharge current [mA]
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)   imperialPulseTestData
+                Dc      (1,1)   double                  { mustBeNegative( Dc ) } = -1.67e3
+            end
+            obj.DischgCurrent = Dc;
+        end % setDischgCurrent        
+    end % ordinary and constructor methods
     
-    methods ( Access = protected )  
+    methods ( Access = protected )
         function T = getTemperatureFname( obj, Q )
             %--------------------------------------------------------------
             % Parse the temperature data from the file name
@@ -175,15 +208,13 @@ classdef birminghamRateTestData < rateTestDataImporter
             Name = obj.Ds.Files{ Q };
             if contains( Name, "25" )
                 T = 25;
-            elseif contains( Name, "45" )
-                T = 45;
             else
                 error('Cannot determine test temperature in file "%s"',...
                                 Name );
             end
         end % getTemperatureFname
         
-        function T = getTemperature( obj, Q, Str )  
+        function T = getTemperature( obj, DataTable, Str )  
             %--------------------------------------------------------------
             % Parse the ageing temperature from data
             %
@@ -191,8 +222,8 @@ classdef birminghamRateTestData < rateTestDataImporter
             %
             % Input Arguments:
             %
-            % Q   --> Data table
-            % Str --> Name of temeperature channel {"EVTempC"}
+            % DataTable     --> Data table
+            % Str           --> Name of temeperature channel {"EVTempC"}
             %--------------------------------------------------------------
             if ( nargin < 3 )
                 Str = "EVTempC";                                            % Apply the default
@@ -204,30 +235,9 @@ classdef birminghamRateTestData < rateTestDataImporter
                 %----------------------------------------------------------
                 % Assign the temperature from measurement
                 %----------------------------------------------------------
-                T = round( median( Q.( Str ) ) );
-                if ( T < 35 )
-                    T = 25;
-                else
-                    T = 45;
-                end
+                T = median( DataTable.( Str ) );
             end
-        end % getTemperature
-        
-        function C = getCRate( obj, Q )
-            %--------------------------------------------------------------
-            % Fetch the C-rate data for the Qth file
-            %
-            % C = obj.getCrate( Q );
-            %
-            % Input Arguments:
-            %
-            % Q   --> pointer to file
-            %--------------------------------------------------------------
-            Fname = obj.Ds.Files{ Q };
-            Fname = string( Fname );
-            C = extractBetween( Fname, "Rate_Test_", "C_" );
-            C = double( C );
-        end % getCrate
+        end % getTemperature        
         
         function SerialNumber = getSerialNumber( obj, Q )
             %--------------------------------------------------------------
@@ -241,9 +251,9 @@ classdef birminghamRateTestData < rateTestDataImporter
             %--------------------------------------------------------------
             L = obj.Ds.Files{ Q };
             SerialNumber = string( extractBetween( L, "_Cell",...
-                                                      "_Rate_Test" ) );
+                                                      "_Pulse_Test" ) );
         end % getSerialNumber
-    end % protected methods    
+    end % protected methods
     
     methods ( Access = private )
         function S = readSignals( obj )
@@ -275,47 +285,4 @@ classdef birminghamRateTestData < rateTestDataImporter
             T.( obj.Current_ ) = C;
         end % invertDischargeCurrent
     end % private methods
-    
-    methods ( Static = true, Access = protected )
-       function N = numCycles( T, EventChannel )
-            %--------------------------------------------------------------
-            % Return number of cycles
-            %
-            % N = obj.numCycles( T, EventChannel );
-            %
-            % Input Arguments:
-            %
-            % T             --> (table) data table
-            % EventChannel  --> (string) Name of channel defining event
-            %
-            % Output Arguments:
-            %
-            % N             --> Number of cycles
-            %--------------------------------------------------------------
-            Idx = ( T.( EventChannel ) == "D" );                            % Point to discharge events
-            N = diff( Idx );
-            N( N < 0 ) = 0;
-            N = sum( N );
-        end % numCycles  
-              
-        function [ Start, Finish ] = locEvents( T, EventChannel)
-            %--------------------------------------------------------------
-            % Locate start and finish of discharge events
-            %
-            % [ Start, Finish ] = obj.locEvents( T, , EventChannel );
-            %
-            % Input Arguments:
-            %
-            % T             --> (table) data table
-            % EventChannel  --> (string) Name of channel defining event
-            %--------------------------------------------------------------
-            S = sign( T.( EventChannel ) );
-            S( S > 0 ) = 0;
-            S = diff( S );
-            Start = find( S < 0, numel( S ), 'first' );
-            Start = Start + 1;
-            Finish = find( S > 0, numel( S ), 'first' );
-            Finish = Finish + 1;
-        end % locEvents
-    end % Static methods
-end % birminghamRateTestData
+end % classdef

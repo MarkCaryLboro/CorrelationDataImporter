@@ -1,6 +1,16 @@
-classdef imperialRateTestData < rateTestDataImporter
-    % Concrete rate test data interface for facility correlation analysis
-    % for Imperial data    
+classdef imperialPulseTestData < pulseTestDataImporter
+    % Concrete pulse test data interface for facility correlation analysis
+    % for Imperial data
+    
+    properties ( SetAccess = protected )
+        Current               string                = "I_mA"                % Name of current channel
+        Capacity              string                = "Capacity_mAh"        % Name of capacity channel
+        Voltage               string                = "Ecell_V"             % Name of voltage channel
+        DischgCurrent         double                = -1.67e3               % Discharge current 
+        PulseTime             double                = 10                    % Required pulse time [s]
+        Time                  string                = "time_s"              % Name of time channel
+        CF                    double                = 1                     % Time signal to seconds c.f.
+    end % protected properties 
     
     properties ( Constant = true )
         Fileformat            string                = ".mat"                % Supported input formats
@@ -8,18 +18,13 @@ classdef imperialRateTestData < rateTestDataImporter
         Facility              correlationFacility   = "Imperial"            % Facility name
     end % abstract & constant properties
     
-    properties ( SetAccess = protected )
-        Current               string                = "I_mA"                % Name of current channel
-        Capacity              string                = "Q_discharge_mAh"     % Name of capacity channel
-    end % protected properties
-    
     methods
-        function obj = imperialRateTestData( BatteryId, RootDir )
+        function obj = imperialPulseTestData( BatteryId, RootDir )
             %--------------------------------------------------------------
-            % imperialRateTestData constructor. Imports correlation rate
+            % imperialPulseTestData constructor. Imports correlation pulse
             % test data and converts it to standard format
             %
-            % obj = imperialRateTestData( BatteryId, RootDir );
+            % obj = imperialPulseTestData( BatteryId, RootDir );
             %
             % Input Arguments:
             %
@@ -72,46 +77,60 @@ classdef imperialRateTestData < rateTestDataImporter
                     W = waitbar( ( Q / N ), Msg );
                 end
                 %----------------------------------------------------------
-                % Capture metadata
-                %----------------------------------------------------------
-                SerialNumber = obj.getSerialNumber( Q );
-                Temperature = obj.getTemperature( Q );
-                %----------------------------------------------------------
-                % File naming convention changes between temperature
-                % settings. So need two methods to retreive the CRate data
-                %----------------------------------------------------------
-                if ( Temperature == 25 )
-                    CRate = obj.getCRate25( Q );
-                else
-                    CRate = obj.getCRate45( Q );
-                end
-                %----------------------------------------------------------
                 % Read the current file
                 %----------------------------------------------------------
                 T = obj.readDs();
                 T.data = obj.interpData( T.data );
+                T.data = struct2table( T.data );
+                %----------------------------------------------------------
+                % Capture metadata
+                %----------------------------------------------------------
+                SerialNumber = obj.getSerialNumber( Q );
+                try
+                    Temperature = obj.getTemperature( T.data );
+                catch
+                    Temperature = nan;
+                end
                 %----------------------------------------------------------
                 % Calculate number and location of the discharge events
                 %----------------------------------------------------------
-                NumCyc = obj.numCycles( T.data, obj.Current_ );
                 [ Start, Finish ] = obj.locEvents( T.data, obj.Current_ );
-                Cycle = ( 1:NumCyc ).';
                 %----------------------------------------------------------
-                % Calculate the discharge capacity
+                % Remove the last start pulse which looks dodgey
                 %----------------------------------------------------------
-                DischargeCapacity = -( T.data.( obj.Capacity_ )( Start ) -....
-                    T.data.( obj.Capacity_ )( Finish ) )/ 1000;
+                Start = Start( 1:( end - 1 ) );
+                NumCyc = numel( Start );
                 %----------------------------------------------------------
-                % Write the curreent data to a summary data and append it
+                % Calculate the state of charge
+                %----------------------------------------------------------
+                SoC = obj.calcSoC( T.data, Start, Finish );
+                SoC = cumsum( SoC );
+                SoC = 1 - SoC;
+                %----------------------------------------------------------
+                % Calculate the discharge internal resistance values
+                %----------------------------------------------------------
+                [ DischargeIR, ChargeIR, DV, DI, CV, CI ] = obj.calcIR( T.data,...
+                    Start, Finish );
+                DischargeIR = obj.iRisNanOrZero( DischargeIR );
+                ChargeIR = obj.iRisNanOrZero( ChargeIR );
+                %----------------------------------------------------------
+                % Correct the units
+                %----------------------------------------------------------
+                DI = DI/1000;
+                CI = CI/1000;
+                DischargeIR = DischargeIR * 1000;
+                ChargeIR = ChargeIR * 1000;
+                %----------------------------------------------------------
+                % Write the current data to a summary data and append it
                 % to the data table
                 %----------------------------------------------------------
                 SerialNumber = repmat( SerialNumber, NumCyc, 1 );
                 Temperature = repmat( Temperature, NumCyc, 1 );
-                CRate = repmat( CRate, NumCyc, 1 );
                 Facility = string( repmat( obj.Facility, NumCyc, 1 ) );     %#ok<PROP>
                 BatteryName = repmat( obj.Battery, NumCyc, 1 );
-                T = table( BatteryName, SerialNumber, CRate, Cycle,...
-                    Facility, Temperature, DischargeCapacity );             %#ok<PROP>
+                T = table( BatteryName, SerialNumber, Facility,...
+                    Temperature, SoC, DischargeIR, ChargeIR, DV, DI,...
+                    CV, CI );                                               %#ok<PROP>
                 if isempty( obj.Data )
                     obj.Data = T;
                 else
@@ -121,11 +140,29 @@ classdef imperialRateTestData < rateTestDataImporter
             %--------------------------------------------------------------
             % Define the units
             %--------------------------------------------------------------
-            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA",...
-                "[Ah]", "[#]", "NA", "[Deg C]", "Ah" ] );
+            obj.Data.Properties.VariableUnits = cellstr( [ "NA", "NA", "NA",...
+                "[Deg C]", "[%]", "[Ohms]", "[Ohms]" , "[V]",...
+                "[A]", "[V]", "[A]" ] );
             close( W );
         end % extractData
-    end % constructor & ordinary methods
+        
+        function obj = setDischgCurrent( obj, Dc )
+            %--------------------------------------------------------------
+            % Set the value of the discharge current in [mA]
+            %
+            % obj = obj.setDischgCurrent( Dc );
+            %
+            % Input Arguments:
+            %
+            % Dc    --> Discharge current [mA]
+            %--------------------------------------------------------------
+            arguments
+                obj     (1,1)   imperialPulseTestData
+                Dc      (1,1)   double                  { mustBeNegative( Dc ) } = -1.67e3
+            end
+            obj.DischgCurrent = Dc;
+        end % setDischgCurrent
+    end % ordinary and constructor methods
     
     methods ( Access = private )
         function S = readSignals( obj )
@@ -139,66 +176,7 @@ classdef imperialRateTestData < rateTestDataImporter
             T = obj.readDs();
             T = T.data;
             S = string( fieldnames( T ) ).';
-        end % readSignals  
-        
-        function C = getCRate25( obj, Q )
-            %--------------------------------------------------------------
-            % Return the C-Rate for the Qth cell in the datastore
-            %
-            % C = obj.getCRate25( Q );
-            %
-            % Input Arguments:
-            %
-            % Q     --> Pointer to current file (double)
-            %--------------------------------------------------------------
-            Fname = obj.Ds.Files{ Q };
-            Fname = string( Fname );
-            C = extractBetween( Fname, "Discharge ", "\Cell" );
-            switch lower( C )
-                case "0p5c"
-                    C = 0.5;
-                otherwise
-                    C = double( replace( C, "C", "" ) );
-            end
-        end % getCRate25
-        
-        function C = getCRate45( obj, Q )
-            %--------------------------------------------------------------
-            % Return the C-Rate for the Qth cell in the datastore
-            %
-            % C = obj.getCRate45( Q );
-            %
-            % Input Arguments:
-            %
-            % Q     --> Pointer to current file (double)
-            %--------------------------------------------------------------
-            Fname = obj.Ds.Files{ Q };
-            Fname = string( Fname );
-            C = extractBetween( Fname, "deg C\", "\Cell" );
-            switch lower( C )
-                case lower( "Discharge 0p5 C" )
-                    C = 0.5;
-                otherwise
-                    C = double( replace( C, "C", "" ) );
-            end
-        end % getCRate45
-        
-        function T = getTemperature( obj, Q )
-            %--------------------------------------------------------------
-            % Return the environmental chamber test temperature
-            %
-            % T = obj.getTemperature( Q );
-            %
-            % Input Arguments:
-            %
-            % Q     --> Pointer to current file (double)
-            %--------------------------------------------------------------
-            Fname = obj.Ds.Files{ Q };
-            Fpath = fileparts( Fname );
-            Fpath = string( Fpath );
-            T = extractBetween( Fpath, "test\", " deg" );
-            T = double( T );
-        end % getTemperature
+        end % readSignals
         
         function SerialNumber = getSerialNumber( obj, Q )
             %--------------------------------------------------------------
@@ -213,9 +191,28 @@ classdef imperialRateTestData < rateTestDataImporter
             Fname = obj.Ds.Files{ Q };
             [ ~, SerialNumber ] = fileparts( Fname );
             SerialNumber = string( SerialNumber );
+            SerialNumber = replace( SerialNumber, " ", "_" );
         end % getSerialNumber
-    end % private
-    
-    methods ( Static = true, Hidden = true )
-    end % static methods
-end % imperialRateTestData
+        
+        function T = getTemperature( obj, Data, SigName )                   %#ok<INUSL>
+            %--------------------------------------------------------------
+            % Return the environmental chamber test temperature
+            %
+            % T = obj.getTemperature( Data, SigName );
+            %
+            % Input Arguments:
+            %
+            % Data      --> (struct) Raw data structure.
+            % SigName   --> (string) Name of temperature channel. Default
+            %                        is "Temperature_degC".
+            %--------------------------------------------------------------
+            if ( nargin < 3 ) || isempty( SigName )
+                SigName = "Temperature_degC";
+            else
+                SigName = string( SigName );
+            end
+            T = median( Data.( SigName ) );
+        end % getTemperature        
+    end % private methods
+end
+
